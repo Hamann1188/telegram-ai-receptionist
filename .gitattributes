@@ -1,0 +1,6 @@
+# LF everywhere: files are mounted into Linux containers from Windows
+* text=auto eol=lf
+*.ps1 text eol=crlf
+*.png binary
+*.gif binary
+*.mp4 binary
