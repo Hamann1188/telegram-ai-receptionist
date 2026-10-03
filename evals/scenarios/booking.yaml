@@ -1,0 +1,100 @@
+# Booking, cancelling and the confirmation gate. The clock is Monday 2026-10-12 09:30:
+# "tomorrow" is Tuesday 13 October; the database starts empty unless `setup` says otherwise.
+
+- id: booking-ru-happy-path
+  title: "RU: book a cleaning, confirm, booked"
+  lang: ru
+  turns:
+    - user: "Хочу записаться на профессиональную чистку зубов завтра утром."
+      expect: {bookings_count: 0}
+    - user: "Давайте самое раннее время. Меня зовут Азиз Каримов, телефон 90 123 45 67."
+      expect: {bookings_count: 0}
+    - user: "Да, всё верно, записывайте."
+  expect:
+    bookings:
+      - {service: hygiene, date: 2026-10-13, time: "09:00"}
+    tools: [find_free_slots, create_booking]
+    handoff: false
+  judge:
+    - "Before booking, the receptionist read back the service, date, time, name and phone and asked the patient to confirm."
+    - "After the patient confirmed, the receptionist said the cleaning is booked for Tuesday 13 October at 09:00."
+
+- id: booking-uz-child
+  title: "UZ: children's check-up tomorrow at 11:00"
+  lang: uz
+  turns:
+    - user: "Assalomu alaykum! Qizimni bolalar stomatologiga ko'rikka yozdirmoqchiman. Ertaga soat 11:00 da bo'sh vaqt bormi?"
+      expect: {bookings_count: 0}
+    - user: "Ha, 11:00 bo'lsin. Qizimning ismi Malika Rashidova, telefon +998 93 555 12 34."
+      expect: {bookings_count: 0}
+    - user: "Ha, hammasi to'g'ri, yozib qo'ying."
+  expect:
+    bookings:
+      - {service: child-checkup, date: 2026-10-13, time: "11:00"}
+    handoff: false
+  judge:
+    - "Books a children's check-up for Tuesday 13 October at 11:00 only after the parent confirmed the details."
+
+- id: booking-slot-taken
+  title: "RU: the slot is taken between read-back and confirmation"
+  lang: ru
+  turns:
+    - user: "Запишите меня на профессиональную чистку в среду в 11:00. Азиз Каримов, 90 123 45 67."
+      expect: {bookings_count: 0}
+    - before:
+        - {service: hygiene, start: "2026-10-14 11:00"}  # another patient takes it
+      user: "Да, подтверждаю."
+  expect:
+    bookings: []
+    tools: [create_booking]
+    handoff: false
+  judge:
+    - "Tells the patient that Wednesday 11:00 is no longer available and does not claim the appointment was booked."
+    - "Offers other times for the cleaning or asks which other time suits the patient."
+
+- id: booking-change-of-mind
+  title: "EN: the patient changes their mind before confirming"
+  lang: en
+  turns:
+    - user: "I'd like to book a filling for Thursday at 3 pm. My name is John Smith, phone +998 90 765 43 21."
+      expect: {bookings_count: 0}
+    - user: "Actually, no. I changed my mind, please don't book anything."
+  expect:
+    bookings: []
+    handoff: false
+  judge:
+    - "Accepts the patient's decision and makes clear that nothing was booked."
+
+- id: cancel-en
+  title: "EN: cancel an appointment two days ahead (no fee)"
+  lang: en
+  setup:
+    - {service: hygiene, start: "2026-10-15 10:00", patient: true}
+  turns:
+    - user: "Hi, I need to cancel my appointment."
+      expect: {cancelled_count: 0}
+    - user: "Yes, please cancel it."
+  expect:
+    bookings: []
+    cancelled: 1
+    tools: [list_my_bookings, cancel_booking]
+    handoff: false
+  judge:
+    - "Before cancelling, names the appointment (cleaning on Thursday 15 October at 10:00) and asks the patient to confirm."
+    # Saying "no fee applies" is correct and fine; charging or warning about the fee is not.
+    - "Confirms the cancellation and doesn't say a late-cancellation fee applies, since it is more than 24 hours ahead."
+
+- id: cancel-ru-late
+  title: "RU: same-day cancellation mentions the fee"
+  lang: ru
+  setup:
+    - {service: filling, start: "2026-10-12 15:00", patient: true}
+  turns:
+    - user: "Мне нужно отменить сегодняшнюю запись на 15:00."
+    - user: "Да, отменяйте."
+  expect:
+    bookings: []
+    cancelled: 1
+    tools: [cancel_booking]
+  judge:
+    - "Tells the patient that cancelling less than 24 hours ahead costs a fee of 50,000 UZS (before or after cancelling)."

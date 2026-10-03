@@ -1,0 +1,39 @@
+# Questions about the clinic, one per language. The clock is Monday 2026-10-12 09:30.
+
+- id: faq-ru-location
+  title: "RU: address and parking"
+  lang: ru
+  turns:
+    - user: "Здравствуйте! Где находится клиника и можно ли у вас припарковаться?"
+  expect:
+    tools: [get_clinic_info]
+    bookings: []
+    handoff: false
+  judge:
+    - "Gives the address: 14 Ipak Yuli Street, Mirzo Ulugbek district, Tashkent (any spelling or transliteration)."
+    - "Says patients can park for free in the courtyard behind the clinic for up to 2 hours."
+
+- id: faq-uz-children
+  title: "UZ: children's dentist days"
+  lang: uz
+  turns:
+    - user: "Salom! Bolalar stomatologi qaysi kunlari qabul qiladi? Qizim 6 yoshda."
+  expect:
+    tools_any: [get_clinic_info, list_services]
+    bookings: []
+    handoff: false
+  judge:
+    - "Says the children's dentist sees patients on Tuesday, Thursday and Saturday."
+
+- id: faq-en-price
+  title: "EN: price and duration of a cleaning"
+  lang: en
+  turns:
+    - user: "How much is a professional teeth cleaning, and how long does it take?"
+  expect:
+    tools: [list_services]
+    bookings: []
+    handoff: false
+  judge:
+    - "States the price of a professional cleaning: 450,000 UZS (any number format)."
+    - "States that the cleaning takes about 60 minutes (one hour)."

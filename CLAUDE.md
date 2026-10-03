@@ -30,7 +30,7 @@ tests/
 | Full stack | `wsl -d Ubuntu -- docker compose up -d --build` |
 | Lint / format | `uv run ruff check .` · `uv run ruff format .` |
 | Tests | `uv run pytest` |
-| Eval (real API, costs money) | `uv run python -m evals.run` |
+| Eval (real API, about $0.57) | `uv run python -m evals.run [--only id,id [--merge]]`: 14 scenarios plus judge, on the `receptionist_eval` database (needs the compose `db`). Writes `evals/results/latest.md` (committed). Ask the owner before running: it spends their balance |
 
 ## Repo rules
 
@@ -92,5 +92,8 @@ Each step is one commit; tick it off in Status.
 - [x] 6 Handoff and admin group (2026-10-04):
   - `telegram/admin.py` (AdminDesk: booking and handoff cards, relay map, Take over and Return to bot), `/chatid`, migration 0003, 216 tests;
   - live round trip in the owner's group "Registan Smile — Staff" (`RECEPTIONIST_ADMIN_CHAT_ID` in `.env`, a basic group): booking card, Take over, return, a model-called handoff with summary, operator reply and patient message relayed both ways, Return to bot with a fresh session. No errors in the logs.
-- [ ] 7 Evals
+- [x] 7 Evals (2026-10-04):
+  - `evals/scenarios/*.yaml` (14 scenarios, 22 messages), `evals/scenario.py` (deterministic checks), `evals/run.py` (runner and judge);
+  - 14 of 14 pass, every metric at 100% or 0, $0.57 per run, median 7.2 s per message. I read every transcript;
+  - added a Scope line to the system prompt (decline unrelated topics); the off-topic scenario passes with it.
 - [ ] 8 README and video
