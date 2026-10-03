@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -17,6 +19,8 @@ class Settings(BaseSettings):
     # Telegram group where operators get handoffs and booking notifications.
     admin_chat_id: int | None = None
     emergency_number: str = "103"  # ambulance in Uzbekistan
+    # Relative to the working directory: the repo root in development, /app in Docker.
+    clinic_file: Path = Path("data/clinic.yaml")
 
     anthropic_api_key: SecretStr | None = None
     # Always passed to the client explicitly, so a globally exported

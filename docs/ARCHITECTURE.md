@@ -89,15 +89,31 @@ All tools are declared from the first request with `strict: true`. `tool_choice`
 ## 7. Data model
 
 ```
-chats      id · tg_chat_id UNIQUE · language · mode (bot|operator) · created_at
+chats      id · tg_chat_id UNIQUE · language (ru|uz|en) · mode (bot|operator) · created_at
 sessions   id · chat_id FK · started_at · ended_at · summary
-messages   id · session_id FK · ordinal · role · content jsonb (verbatim API blocks) · usage jsonb · created_at
-bookings   id · chat_id FK · service_id · slot_start · slot_end · patient_name · phone · status · created_at
-           UNIQUE (slot_start) WHERE status = 'confirmed'
+           UNIQUE (chat_id) WHERE ended_at IS NULL           -- one open session per chat
+messages   id · session_id FK · ordinal · role (user|assistant) · content jsonb (verbatim API blocks) · usage jsonb · created_at
+           UNIQUE (session_id, ordinal)
+bookings   id · chat_id FK · service_id · resource · slot_start · slot_end · patient_name · phone
+           · status (confirmed|cancelled) · created_at · cancelled_at
+           EXCLUDE USING gist (resource WITH =, tstzrange(slot_start, slot_end) WITH &&)
+             WHERE status = 'confirmed'                      -- no overlaps per resource (ADR-8)
 handoffs   id · chat_id FK · reason · summary · admin_message_id · opened_at · closed_at
 ```
 
-Clinic content (services, hours, FAQ) lives in the versioned `data/clinic.yaml`, not in the database.
+Every foreign key to `chats` cascades on delete, so `/forget` deletes one row. Times are `timestamptz`; the clinic's time zone (Asia/Tashkent) applies only when slots are generated and shown.
+
+Clinic content lives in the versioned `data/clinic.yaml`, not in the database: hours, holidays, booking rules, resources, services with durations and prices, and FAQ. Its facts match the sample documents of ai-document-assistant.
+
+**Resources.** A resource is a bookable line such as `therapist`, `hygienist`, `surgeon`, `orthopedist` or `pediatric`. Each takes one appointment at a time, and can be limited to certain weekdays: the children's dentist works Tuesday, Thursday and Saturday. Every service belongs to one resource.
+
+**Free slots** (`core/slots.py`, a pure function) are computed in 30-minute steps inside the opening hours. A slot qualifies when:
+- the visit ends by closing time;
+- it doesn't overlap a confirmed booking of the same resource;
+- it starts at least 60 minutes from now;
+- it falls within the 30-day booking horizon.
+
+Closed days, holidays and the resource's off days have no slots.
 
 ## 8. Safety and guardrails
 
@@ -150,6 +166,7 @@ Targets: all booking assertions pass, reply language matches in ≥ 95% of turns
 | ADR-4 | Long polling for the demo, webhook for production | No public URL or TLS certificate needed to demo |
 | ADR-5 | Session rotation with a summary instead of trimming history | Trimming edits the prefix: 400 on Opus 5.5 for new accounts, and cache misses |
 | ADR-6 | PostgreSQL instead of SQLite | Concurrent writes; transactional booking with a unique constraint; same database as project 1 |
+| ADR-8 | Bookings belong to a resource, and overlaps are prevented by a PostgreSQL exclusion constraint (`btree_gist`), instead of `UNIQUE (slot_start)` | A unique start time doesn't stop a 60-minute visit at 10:00 from overlapping one at 10:30, and it would let only one patient in at a time for the whole clinic. The constraint makes double booking impossible even under concurrent requests. Trade-off: a PostgreSQL extension (contrib, trusted, present in the official image) |
 | ADR-7 | No server-side refusal fallback in v1 | It is a beta API. In a persisted multi-turn history it adds `fallback` blocks and sticky routing, and the fallback model cannot read Opus 5.5 thinking. Refusals are rare for a clinic FAQ bot and end in a handoff offer. Revisit if evals show refusals |
 
 ## 12. Extensions (offer as add-ons)

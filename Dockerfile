@@ -16,7 +16,10 @@ RUN uv sync --locked --no-dev --no-install-project
 ENV PATH="/app/.venv/bin:$PATH"
 
 COPY src ./src
+COPY alembic.ini ./
+COPY alembic ./alembic
+COPY data ./data
 RUN uv sync --locked --no-dev --no-editable
 
 USER app
-CMD ["python", "-m", "receptionist"]
+CMD ["sh", "-c", "alembic upgrade head && exec python -m receptionist"]

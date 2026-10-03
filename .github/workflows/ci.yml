@@ -7,6 +7,22 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: receptionist
+          POSTGRES_PASSWORD: receptionist
+          POSTGRES_DB: receptionist_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U receptionist"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      RECEPTIONIST_TEST_DATABASE_URL: postgresql+asyncpg://receptionist:receptionist@localhost:5432/receptionist_test
     steps:
       - uses: actions/checkout@v7
       # setup-uv publishes only full version tags (no floating major tag since v8)

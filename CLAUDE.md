@@ -68,7 +68,11 @@ Each step is one commit; tick it off in Status.
 - [x] 1 Scaffold (2026-10-03): uv project, settings, `/start` greeting in RU/UZ/EN by Telegram `language_code`, Dockerfile and compose (`bot` + `db` on host port 5433), CI, 19 tests.
   - Live check: the bot is @registan_smile_demo_bot, and its `/start` was handled in 336 ms from Docker.
   - Kaspersky does not intercept api.telegram.org, both from Windows and from WSL.
-- [ ] 2 Clinic data and DB
+- [x] 2 Clinic data and DB (2026-10-03):
+  - `data/clinic.yaml` (5 resources, 11 services, 15 FAQ topics; facts match project 1's PDFs), validated by pydantic;
+  - `core/slots.py`;
+  - models and migration `0001`, with an exclusion constraint against overlapping bookings (ADR-8);
+  - 61 tests, 11 of them against PostgreSQL. Integration tests need `RECEPTIONIST_TEST_DATABASE_URL=postgresql+asyncpg://receptionist:receptionist@localhost:5433/receptionist_test`. They are slow (about 2 min) because every statement opens a new connection through the WSL port forward.
 - [ ] 3 Tools
 - [ ] 4 Agent core
 - [ ] 5 Telegram adapter

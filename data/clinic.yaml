@@ -1,0 +1,156 @@
+# Registan Smile Clinic: a FICTIONAL dental clinic used across the portfolio demos.
+# Facts match the sample documents of ai-document-assistant (patient handbook, price list).
+# Times are local (Asia/Tashkent). Quote times: unquoted 09:00 is a number in YAML 1.1.
+
+name: Registan Smile Clinic
+fictional: true
+timezone: Asia/Tashkent
+address: 14 Ipak Yuli Street, Mirzo Ulugbek district, Tashkent
+phone: "+998 71 555 01 23"
+telegram: "@registan_smile_demo"
+
+hours:
+  mon: {open: "09:00", close: "20:00"}
+  tue: {open: "09:00", close: "20:00"}
+  wed: {open: "09:00", close: "20:00"}
+  thu: {open: "09:00", close: "20:00"}
+  fri: {open: "09:00", close: "20:00"}
+  sat: {open: "10:00", close: "16:00"}
+  sun: null
+
+# Public holidays: the clinic is closed.
+holidays:
+  - 2026-12-08  # Constitution Day
+  - 2027-01-01  # New Year
+
+booking:
+  slot_step_minutes: 30
+  min_notice_minutes: 60  # the earliest bookable start is one hour from now
+  horizon_days: 30        # how far ahead patients can book
+
+# Bookable lines. Each takes one appointment at a time; `days` limits the weekdays.
+resources:
+  therapist:
+    name: {en: Dentist, ru: Стоматолог-терапевт, uz: Terapevt stomatolog}
+  hygienist:
+    name: {en: Dental hygienist, ru: Гигиенист, uz: Gigiyenist}
+  surgeon:
+    name: {en: Oral surgeon, ru: Стоматолог-хирург, uz: Jarroh stomatolog}
+  orthopedist:
+    name: {en: Prosthodontist, ru: Стоматолог-ортопед, uz: Ortoped stomatolog}
+  pediatric:
+    name: {en: Children's dentist, ru: Детский стоматолог, uz: Bolalar stomatologi}
+    days: [tue, thu, sat]
+
+# Prices in UZS, from the price list effective 1 September 2026.
+services:
+  - id: consultation
+    name: {en: Initial dental consultation, ru: Первичная консультация стоматолога, uz: Stomatologning birlamchi maslahati}
+    resource: therapist
+    duration_minutes: 30
+    price_uzs: 100000
+    price_note: Free if treatment starts on the day of the consultation.
+  - id: filling
+    name: {en: Cavity treatment with a composite filling, ru: "Лечение кариеса, пломба из светоотверждаемого композита", uz: Kariesni davolash va kompozit plomba}
+    resource: therapist
+    duration_minutes: 60
+    price_uzs: 550000
+    price_note: Anaesthesia is included.
+  - id: root-canal
+    name: {en: "Root canal treatment, 1 canal", ru: "Лечение каналов, 1 канал", uz: "Kanalni davolash, 1 kanal"}
+    resource: therapist
+    duration_minutes: 90
+    price_uzs: 800000
+    price_note: Anaesthesia is included. Three canals cost 1,900,000 UZS.
+  - id: hygiene
+    name: {en: Professional teeth cleaning, ru: Профессиональная гигиена полости рта, uz: Professional tish tozalash}
+    resource: hygienist
+    duration_minutes: 60
+    price_uzs: 450000
+  - id: whitening
+    name: {en: In-office teeth whitening, ru: Кабинетное отбеливание, uz: Klinikada tish oqartirish}
+    resource: hygienist
+    duration_minutes: 90
+    price_uzs: 2500000
+  - id: extraction
+    name: {en: Simple tooth extraction, ru: Удаление простого зуба, uz: Oddiy tish olib tashlash}
+    resource: surgeon
+    duration_minutes: 30
+    price_uzs: 300000
+  - id: wisdom-tooth
+    name: {en: Wisdom tooth extraction, ru: Удаление зуба мудрости, uz: Aql tishini olib tashlash}
+    resource: surgeon
+    duration_minutes: 60
+    price_uzs: 900000
+  - id: implant-consultation
+    name: {en: Implant consultation with a treatment plan, ru: Консультация хирурга с планом лечения, uz: Jarroh maslahati va davolash rejasi}
+    resource: surgeon
+    duration_minutes: 30
+    price_uzs: 150000
+    price_note: A turnkey implant (implant, abutment, crown) costs 7,500,000 UZS.
+  - id: crown-consultation
+    name: {en: Crown or veneer consultation with a treatment plan, ru: Консультация ортопеда с планом лечения, uz: Ortoped maslahati va davolash rejasi}
+    resource: orthopedist
+    duration_minutes: 30
+    price_uzs: 150000
+    price_note: Metal-ceramic crown 2,200,000 UZS; zirconia crown 3,800,000 UZS; ceramic veneer 4,200,000 UZS.
+  - id: child-checkup
+    name: {en: Children's check-up and consultation, ru: Осмотр и консультация детского стоматолога, uz: Bolalar stomatologi ko'rigi va maslahati}
+    resource: pediatric
+    duration_minutes: 30
+    price_uzs: 80000
+  - id: child-treatment
+    name: {en: Baby tooth treatment, ru: Лечение молочного зуба, uz: Sut tishini davolash}
+    resource: pediatric
+    duration_minutes: 60
+    price_uzs: 350000
+
+# Answers for get_clinic_info, in English; the assistant replies in the patient's language.
+faq:
+  hours: >-
+    Monday to Friday 09:00-20:00, Saturday 10:00-16:00. Closed on Sunday and public holidays.
+  address: >-
+    14 Ipak Yuli Street, Mirzo Ulugbek district, Tashkent. Reception phone +998 71 555 01 23,
+    Telegram @registan_smile_demo.
+  parking: >-
+    Free parking for patients in the courtyard behind the clinic for up to 2 hours. Show your
+    appointment card to the guard at the gate.
+  payment: >-
+    Cash (UZS), Uzcard, Humo, Visa and Mastercard cards, and payments through the Click and
+    Payme apps. Payment is due at the end of each visit.
+  installments: >-
+    Treatment plans over 3,000,000 UZS can be paid in installments for up to 6 months with 0%
+    interest. The first payment is 30% of the plan total. The administrator prepares the
+    installment agreement.
+  insurance: >-
+    The clinic works with corporate voluntary medical insurance programmes. If your insurer is
+    not on the list, you pay at the clinic and receive an invoice, a receipt and a copy of the
+    treatment record for reimbursement.
+  discounts: >-
+    Pensioners and full-time students get 10% off therapeutic treatment. Discounts can't be
+    combined.
+  cancellation: >-
+    Cancel or reschedule at least 24 hours before the appointment. Late cancellations and
+    missed appointments cost 50,000 UZS. After two missed appointments, future bookings need
+    100% prepayment.
+  arrival: >-
+    Arrive 10 minutes early to fill in the registration form. If you are more than 15 minutes
+    late, the visit may need to be rescheduled.
+  children: >-
+    Children under 16 must come with a parent or legal guardian. The children's dentist sees
+    patients on Tuesday, Thursday and Saturday. The first check-up is recommended at age one.
+  preparation: >-
+    Bring your passport or ID card, your insurance card if you have one, and any X-rays from the
+    last 12 months. Tell the dentist about all medicines you take.
+  aftercare: >-
+    After a filling, don't eat for 2 hours. After an extraction, don't rinse, drink hot drinks or
+    smoke for 24 hours; mild pain and swelling for 2-3 days are normal; call the clinic if
+    bleeding doesn't stop after 30 minutes of pressure with gauze. After professional cleaning,
+    avoid coffee, tea, red wine and strongly coloured food for 24 hours.
+  warranty: >-
+    With a check-up and professional cleaning every 6 months: fillings 2 years, crowns and
+    veneers 5 years, implants 10 years (the crown on an implant 5 years). Injuries and ignoring
+    the dentist's recommendations aren't covered.
+  urgent_pain: >-
+    For severe pain or swelling during opening hours, call reception and say it's urgent: two
+    emergency slots are kept open every day.
