@@ -1,0 +1,47 @@
+[project]
+name = "telegram-ai-receptionist"
+version = "0.1.0"
+description = "Telegram AI receptionist for a clinic: FAQ, appointment booking and human handoff, powered by Claude."
+license = "MIT"
+requires-python = ">=3.13"
+dependencies = [
+    "aiogram>=3.15",
+    "alembic>=1.14",
+    "anthropic>=1.0",
+    "asyncpg>=0.30",
+    "pydantic-settings>=2.6",
+    "pyyaml>=6.0",
+    "sqlalchemy[asyncio]>=2.0.36",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.20,<0.13"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "receptionist"
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "UP", "SIM", "ASYNC", "RUF"]
+# Multilingual project: Cyrillic in strings is intended, not a Latin look-alike
+ignore = ["RUF001"]
+
+[tool.ruff.lint.isort]
+# The alembic/ migrations folder would otherwise make the library look first-party.
+known-third-party = ["alembic"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+asyncio_mode = "auto"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=1.0",
+    "ruff>=0.8",
+]

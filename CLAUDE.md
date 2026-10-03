@@ -45,6 +45,9 @@ tests/
 - Handle `stop_reason == "refusal"` before reading content. Cap the loop at 6 iterations.
 - Unit tests use a scripted fake Claude client (responses with thinking, tool_use and text blocks); only `evals/` calls the real API.
 - No medical advice in prompts or replies; the emergency number comes from settings.
+- Run only one polling instance per bot token. A second one, for example `uv run` while the Docker `bot` service is up, gets `TelegramConflictError`; stop one first (`wsl -d Ubuntu -- docker compose stop bot`).
+- aiogram verifies Telegram's TLS certificate against certifi, not the Windows store. A `CERTIFICATE_VERIFY_FAILED` on `api.telegram.org` means Kaspersky is intercepting it (see `../CLAUDE.md`); the fix is the owner's exclusion, never disabling verification.
+- Settings use `env_ignore_empty=True`: an empty `RECEPTIONIST_X=` line in `.env` means "not set".
 
 ## Build plan
 
@@ -62,7 +65,9 @@ Each step is one commit; tick it off in Status.
 ## Status
 
 - [x] Target architecture and CLAUDE.md (2026-10-01)
-- [ ] 1 Scaffold
+- [ ] 1 Scaffold (2026-10-03):
+  - done: uv project, settings, `/start` greeting in RU/UZ/EN by Telegram `language_code`, Dockerfile and compose (`bot` + `db` on host port 5433), CI, 19 tests;
+  - pending: live `/start` check, which needs the owner's BotFather token in `.env`.
 - [ ] 2 Clinic data and DB
 - [ ] 3 Tools
 - [ ] 4 Agent core

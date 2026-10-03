@@ -1,0 +1,33 @@
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-receptionist}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-receptionist}
+      POSTGRES_DB: ${POSTGRES_DB:-receptionist}
+    # 5433 on the host, so it can run next to the document assistant's database on 5432
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  bot:
+    build: .
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      RECEPTIONIST_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-receptionist}:${POSTGRES_PASSWORD:-receptionist}@db:5432/${POSTGRES_DB:-receptionist}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:
