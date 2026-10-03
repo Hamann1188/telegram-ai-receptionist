@@ -65,9 +65,9 @@ Each step is one commit; tick it off in Status.
 ## Status
 
 - [x] Target architecture and CLAUDE.md (2026-10-01)
-- [ ] 1 Scaffold (2026-10-03):
-  - done: uv project, settings, `/start` greeting in RU/UZ/EN by Telegram `language_code`, Dockerfile and compose (`bot` + `db` on host port 5433), CI, 19 tests;
-  - pending: live `/start` check, which needs the owner's BotFather token in `.env`.
+- [x] 1 Scaffold (2026-10-03): uv project, settings, `/start` greeting in RU/UZ/EN by Telegram `language_code`, Dockerfile and compose (`bot` + `db` on host port 5433), CI, 19 tests.
+  - Live check: the bot is @registan_smile_demo_bot, and its `/start` was handled in 336 ms from Docker.
+  - Kaspersky does not intercept api.telegram.org, both from Windows and from WSL.
 - [ ] 2 Clinic data and DB
 - [ ] 3 Tools
 - [ ] 4 Agent core
