@@ -51,13 +51,26 @@ UNSUPPORTED: dict[Language, str] = {
     "en": "For now I can only read text messages. Please type your question.",
 }
 
-OPERATOR_MODE: dict[Language, str] = {
-    "ru": "Ваш разговор передан сотруднику клиники, он ответит здесь. Чтобы снова "
-    "говорить с ботом, отправьте /start.",
-    "uz": "Suhbatingiz klinika xodimiga topshirildi, u shu yerda javob beradi. Bot bilan "
-    "qayta gaplashish uchun /start yuboring.",
-    "en": "Your conversation is with a clinic staff member, who will reply here. To talk "
-    "to the bot again, send /start.",
+# Operator mode without a working admin group: nobody would read the messages.
+OPERATOR_NO_STAFF: dict[Language, str] = {
+    "ru": "Сейчас не получается передать сообщение сотруднику. Пожалуйста, позвоните в "
+    "клинику: {phone}. Чтобы снова говорить с ботом, отправьте /start.",
+    "uz": "Hozir xabarni xodimga yetkazib bo'lmayapti. Iltimos, klinikaga qo'ng'iroq qiling: "
+    "{phone}. Bot bilan qayta gaplashish uchun /start yuboring.",
+    "en": "I can't pass your message to a staff member right now. Please call the clinic "
+    "on {phone}. To talk to the bot again, send /start.",
+}
+
+STAFF_JOINED: dict[Language, str] = {
+    "ru": "К разговору подключился сотрудник клиники, он ответит здесь.",
+    "uz": "Suhbatga klinika xodimi qo'shildi, u shu yerda javob beradi.",
+    "en": "A clinic staff member has joined the chat and will reply here.",
+}
+
+BACK_TO_BOT: dict[Language, str] = {
+    "ru": "Вы снова общаетесь с виртуальным администратором. Чем могу помочь?",
+    "uz": "Siz yana virtual administrator bilan gaplashyapsiz. Qanday yordam bera olaman?",
+    "en": "You're chatting with the virtual receptionist again. How can I help?",
 }
 
 FORGET_CONFIRM: dict[Language, str] = {

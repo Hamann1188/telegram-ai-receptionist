@@ -48,6 +48,7 @@ tests/
 - No medical advice in prompts or replies; the emergency number comes from settings.
 - Run only one polling instance per bot token. A second one, for example `uv run` while the Docker `bot` service is up, gets `TelegramConflictError`; stop one first (`wsl -d Ubuntu -- docker compose stop bot`).
 - aiogram verifies Telegram's TLS certificate against certifi, not the Windows store. A `CERTIFICATE_VERIFY_FAILED` on `api.telegram.org` means Kaspersky is intercepting it (see `../CLAUDE.md`); the fix is the owner's exclusion, never disabling verification.
+- aiogram routers are built by functions (`patient_router()`, `admin_router(id)`, `setup_router()`), never at module level: a router can belong to one dispatcher only, and tests build several.
 - Settings use `env_ignore_empty=True`: an empty `RECEPTIONIST_X=` line in `.env` means "not set".
 - Never type a full internal-markup tag, an `antml`-namespaced XML tag, in code or docs: it gets mangled on the way into the file. Build it from parts in tests (`"<" + "antml" + ":reply>"`). Step 7 evals must assert that no reply contains `antml`.
 - Concurrency bugs may show only in CI. Local tests reach PostgreSQL through the WSL port forward, which is slow enough that racing inserts never overlap: the booking deadlock appeared only on GitHub Actions. The pytest step in CI publishes failures as annotations, readable without auth at `/repos/Hamann1188/telegram-ai-receptionist/check-runs/<job_id>/annotations`.
@@ -85,7 +86,11 @@ Each step is one commit; tick it off in Status.
   - migration 0002: `json` message content (ADR-10) and the session fingerprint;
   - 154 tests. The fake client proves history is replayed byte-identical and tool results are paired by id;
   - live check through the console: a Russian booking flow, an Uzbek list of bookings, and an emergency that triggered a handoff with 103. No 400 over 6 replayed turns, the cache worked, and the run cost about $0.08.
-- [ ] 5 Telegram adapter
-- [ ] 6 Handoff and admin group
+- [x] 5 Telegram adapter (2026-10-03):
+  - `telegram/service.py` (ChatService), handlers, per-message language detection, rate limit, length and daily-spend caps, `/forget` with confirmation;
+  - the owner chatted live in RU, UZ and EN, and a booking was made and cancelled end to end. Every reply carried an `antml_reply_` prefix, fixed by commit 4205adb; a live re-check is pending.
+- [ ] 6 Handoff and admin group (2026-10-03):
+  - code done: `telegram/admin.py` (AdminDesk: booking and handoff cards, relay map, Take over and Return to bot), `/chatid`, migration 0003, 216 tests;
+  - pending: a manual round trip in the owner's admin group.
 - [ ] 7 Evals
 - [ ] 8 README and video

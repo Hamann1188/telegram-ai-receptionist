@@ -4,6 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from aiogram.types import User
 
 from receptionist.config import Settings
 from receptionist.core.agent import AgentReply
@@ -12,11 +13,11 @@ from receptionist.core.ports import NewBooking
 from receptionist.db.conversations import ChatRecord
 from receptionist.telegram import texts
 from receptionist.telegram.bot import NO_TOKEN, build_dispatcher
-from receptionist.telegram.handlers import ForgetCallback, start, unsupported
+from receptionist.telegram.handlers import ForgetCallback, display_name, media, start
 from receptionist.telegram.ratelimit import RateLimiter
 from receptionist.telegram.service import ChatService
 from receptionist.telegram.texts import detect_language, language_from_code, split_message
-from tests.fakes import FakeBookings, RecordingNotifier
+from tests.fakes import FakeBookings, FakeChats, RecordingNotifier
 
 CLINIC = load_clinic(Path(__file__).resolve().parents[1] / "data" / "clinic.yaml")
 NOW = datetime.combine(datetime(2026, 10, 5), time(10), CLINIC.tz)
@@ -127,37 +128,22 @@ class FakeAssistant:
         self.resets.append(chat_id)
 
 
-class FakeChats:
-    def __init__(self):
-        self.rows: dict[int, ChatRecord] = {}
-        self.usage: list[dict] = []
-        self.forgotten: list[int] = []
+class FakeDesk:
+    def __init__(self, reachable=True):
+        self.reachable = reachable
+        self.forwarded: list[tuple] = []
+        self.restarted: list[int] = []
 
-    async def ensure(self, tg_chat_id, language):
-        old = self.rows.get(tg_chat_id)
-        record = ChatRecord(
-            id=old.id if old else len(self.rows) + 1,
-            tg_chat_id=tg_chat_id,
-            language=language or (old.language if old else None),
-            mode=old.mode if old else "bot",
-        )
-        self.rows[tg_chat_id] = record
-        return record
+    async def forward_text(self, chat, text):
+        self.forwarded.append(("text", chat.id, text))
+        return self.reachable
 
-    async def find(self, tg_chat_id):
-        return self.rows.get(tg_chat_id)
+    async def forward_file(self, chat, message_id):
+        self.forwarded.append(("file", chat.id, message_id))
+        return self.reachable
 
-    async def set_mode(self, chat_id, mode):
-        for tg, row in self.rows.items():
-            if row.id == chat_id:
-                self.rows[tg] = ChatRecord(row.id, tg, row.language, mode)
-
-    async def usage_since(self, chat_id, since):
-        return self.usage
-
-    async def forget(self, tg_chat_id):
-        self.forgotten.append(tg_chat_id)
-        return self.rows.pop(tg_chat_id, None) is not None
+    async def patient_restarted(self, chat):
+        self.restarted.append(chat.id)
 
 
 @pytest.fixture
@@ -185,11 +171,18 @@ def make_service(deps, limit=20, **kwargs) -> ChatService:
 
 
 async def test_start_greets_and_resets_the_session(deps):
-    deps.chats.rows[TG] = ChatRecord(1, TG, "ru", "operator")
-    greeting = await make_service(deps).start(TG, "uz")
+    greeting = await make_service(deps).start(TG, "uz", "Aziz @aziz")
     assert greeting == texts.GREETING["uz"]
     assert deps.assistant.resets == [1]
-    assert deps.chats.rows[TG].mode == "bot"  # /start leaves operator mode
+    assert deps.chats.rows[TG].display_name == "Aziz @aziz"
+
+
+async def test_start_in_operator_mode_returns_to_the_bot_and_tells_the_admins(deps):
+    deps.chats.rows[TG] = ChatRecord(1, TG, "ru", "operator")
+    desk = FakeDesk()
+    await make_service(deps, desk=desk).start(TG, "ru")
+    assert deps.chats.rows[TG].mode == "bot"
+    assert desk.restarted == [1] and deps.assistant.resets == [1]
 
 
 async def test_text_goes_to_the_assistant_with_the_detected_language(deps):
@@ -218,9 +211,18 @@ async def test_too_long_message_is_rejected(deps):
     assert replies == [texts.TOO_LONG["en"].format(limit=10)] and deps.assistant.replies == []
 
 
-async def test_operator_mode_does_not_call_the_assistant(deps):
+async def test_operator_mode_forwards_to_the_admins_silently(deps):
     deps.chats.rows[TG] = ChatRecord(1, TG, "ru", "operator")
-    assert await make_service(deps).text(TG, "ru", "Алло?") == [texts.OPERATOR_MODE["ru"]]
+    desk = FakeDesk()
+    assert await make_service(deps, desk=desk).text(TG, "ru", "Алло?") == []
+    assert desk.forwarded == [("text", 1, "Алло?")] and deps.assistant.replies == []
+
+
+@pytest.mark.parametrize("desk", [None, FakeDesk(reachable=False)])
+async def test_operator_mode_without_a_reachable_admin_group_gives_the_phone(deps, desk):
+    deps.chats.rows[TG] = ChatRecord(1, TG, "ru", "operator")
+    (reply,) = await make_service(deps, desk=desk).text(TG, "ru", "Алло?")
+    assert reply == texts.OPERATOR_NO_STAFF["ru"].format(phone=CLINIC.phone)
     assert deps.assistant.replies == []
 
 
@@ -237,8 +239,19 @@ async def test_unexpected_failure_gets_a_safe_reply(deps):
     assert CLINIC.phone in reply and "database" not in reply
 
 
-def test_unsupported_media_text(deps):
-    assert make_service(deps).unsupported("uz") == texts.UNSUPPORTED["uz"]
+async def test_media_with_the_bot_gets_a_hint(deps):
+    assert await make_service(deps).media(TG, "uz", 77) == [texts.UNSUPPORTED["uz"]]
+    await deps.chats.ensure(TG, "uz")
+    assert await make_service(deps, desk=FakeDesk()).media(TG, "uz", 77) == [
+        texts.UNSUPPORTED["uz"]
+    ]
+
+
+async def test_media_in_operator_mode_goes_to_the_admins(deps):
+    deps.chats.rows[TG] = ChatRecord(1, TG, "en", "operator")
+    desk = FakeDesk()
+    assert await make_service(deps, desk=desk).media(TG, "en", 77) == []
+    assert desk.forwarded == [("file", 1, 77)]
 
 
 async def seed_booking(deps, chat_id: int, start: datetime):
@@ -283,28 +296,49 @@ async def test_forget_without_data(deps):
 
 class FakeMessage:
     def __init__(self, language_code: str | None):
-        self.from_user = SimpleNamespace(language_code=language_code)
+        self.from_user = User(
+            id=TG, is_bot=False, first_name="Aziz", username="aziz", language_code=language_code
+        )
         self.chat = SimpleNamespace(id=TG)
+        self.message_id = 77
         self.sent: list[str] = []
 
     async def answer(self, text: str, **kwargs) -> None:
         self.sent.append(text)
 
 
-def test_dispatcher_handles_messages_and_buttons():
-    assert sorted(build_dispatcher().resolve_used_update_types()) == ["callback_query", "message"]
+@pytest.mark.parametrize("admin_chat_id", [None, -1001234567890])
+def test_dispatcher_handles_messages_and_buttons(admin_chat_id):
+    dispatcher = build_dispatcher(admin_chat_id=admin_chat_id)
+    assert sorted(dispatcher.resolve_used_update_types()) == ["callback_query", "message"]
+    names = [router.name for router in dispatcher.sub_routers]
+    expected = ["patients", "admin", "setup"] if admin_chat_id else ["patients", "setup"]
+    assert names == expected
 
 
-async def test_start_handler(deps):
+def test_dispatchers_can_be_built_repeatedly():
+    build_dispatcher()
+    build_dispatcher()  # a module-level router would raise "already attached"
+
+
+async def test_start_handler_stores_the_display_name(deps):
     message = FakeMessage("ru")
     await start(message, make_service(deps))
     assert message.sent == [texts.GREETING["ru"]]
+    assert deps.chats.rows[TG].display_name == "Aziz @aziz"
 
 
-async def test_unsupported_handler(deps):
+async def test_media_handler(deps):
     message = FakeMessage("en")
-    await unsupported(message, make_service(deps))
+    await media(message, make_service(deps))
     assert message.sent == [texts.UNSUPPORTED["en"]]
+
+
+def test_display_name():
+    user = User(id=1, is_bot=False, first_name="Aziz", last_name="Karimov", username="aziz_k")
+    assert display_name(user) == "Aziz Karimov @aziz_k"
+    assert display_name(User(id=1, is_bot=False, first_name="A" * 300)) == "A" * 200
+    assert display_name(None) is None
 
 
 def test_forget_callback_data_round_trip():

@@ -17,7 +17,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
 ROOT = Path(__file__).resolve().parents[2]
-TABLES = "chats, sessions, messages, bookings, handoffs"
+TABLES = "chats, sessions, messages, bookings, handoffs, relay_messages"
 
 
 async def _ensure_database(url: str) -> None:

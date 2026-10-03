@@ -12,7 +12,11 @@ from receptionist.core.agent import AgentConfig, Assistant, block_to_param
 from receptionist.core.clinic import load_clinic
 from receptionist.core.prompts import render_system_prompt
 from receptionist.core.tools import ToolContext
-from receptionist.db.conversations import SqlChatRepository, SqlConversationStore
+from receptionist.db.conversations import (
+    SqlChatRepository,
+    SqlConversationStore,
+    SqlRelayRepository,
+)
 from receptionist.db.repositories import SqlBookingRepository, SqlHandoffRepository
 from tests.fakes import FakeClaude, RecordingNotifier, message, text, thinking, tool_use
 
@@ -103,7 +107,8 @@ async def test_chat_mode_lookup_and_usage_window(sessions, chat_id):
     chats = SqlChatRepository(sessions)
     assert (await chats.find(5001)).mode == "bot"
     assert await chats.find(9999) is None
-    await chats.set_mode(chat_id, "operator")
+    assert await chats.set_mode(chat_id, "operator", T0) is True
+    assert await chats.set_mode(chat_id, "operator", T0) is False  # already
     assert (await chats.find(5001)).mode == "operator"
 
     store = SqlConversationStore(sessions)
@@ -115,6 +120,40 @@ async def test_chat_mode_lookup_and_usage_window(sessions, chat_id):
     await store.append(session.id, "assistant", [{"type": "text", "text": "new"}], usage, later)
     assert await chats.usage_since(chat_id, later - timedelta(hours=24)) == [usage]
     assert len(await chats.usage_since(chat_id, T0)) == 2
+
+
+async def test_display_name_and_lookup_by_id(sessions):
+    chats = SqlChatRepository(sessions)
+    chat = await chats.ensure(77, "en", "Aziz @aziz")
+    assert chat.label == f"Aziz @aziz (#{chat.id})"
+    assert (await chats.ensure(77, "ru")).display_name == "Aziz @aziz"  # kept when unknown
+    assert (await chats.ensure(77, "ru", "Aziz K")).display_name == "Aziz K"
+    assert (await chats.get(chat.id)).tg_chat_id == 77
+    assert await chats.get(chat.id + 1000) is None
+
+
+async def test_returning_to_the_bot_closes_open_handoffs(sessions, chat_id):
+    chats = SqlChatRepository(sessions)
+    handoffs = SqlHandoffRepository(sessions)
+    first = await handoffs.open(chat_id, "complaint", "Unhappy.")
+    await handoffs.set_admin_message(first, 9001)
+    assert (await chats.get(chat_id)).mode == "operator"
+
+    assert await chats.set_mode(chat_id, "bot", T0) is True
+    rows = await query(sessions, "SELECT id, admin_message_id, closed_at FROM handoffs")
+    assert rows == [(first, 9001, T0)]
+    assert (await chats.get(chat_id)).mode == "bot"
+
+
+async def test_relay_map(sessions, chat_id):
+    relays = SqlRelayRepository(sessions)
+    await relays.record(-100, 10, chat_id)
+    await relays.record(-100, 10, chat_id)  # recording twice is harmless
+    assert await relays.chat_for(-100, 10) == chat_id
+    assert await relays.chat_for(-100, 11) is None
+    assert await relays.chat_for(-200, 10) is None  # another group
+    await SqlChatRepository(sessions).forget(5001)
+    assert await relays.chat_for(-100, 10) is None  # /forget removes the mapping
 
 
 async def test_agent_with_the_database_replays_history_exactly(sessions, chat_id):

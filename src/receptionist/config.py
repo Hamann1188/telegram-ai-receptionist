@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Literal
 
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -18,6 +19,7 @@ class Settings(BaseSettings):
     bot_token: SecretStr | None = None
     # Telegram group where operators get handoffs and booking notifications.
     admin_chat_id: int | None = None
+    admin_language: Literal["ru", "uz", "en"] = "en"
     emergency_number: str = "103"  # ambulance in Uzbekistan
     # Relative to the working directory: the repo root in development, /app in Docker.
     clinic_file: Path = Path("data/clinic.yaml")

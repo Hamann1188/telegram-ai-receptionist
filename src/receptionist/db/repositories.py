@@ -129,3 +129,11 @@ class SqlHandoffRepository:
             session.add(handoff)
             await session.flush()
             return handoff.id
+
+    async def set_admin_message(self, handoff_id: int, admin_message_id: int) -> None:
+        async with self._sessions.begin() as session:
+            await session.execute(
+                update(Handoff)
+                .where(Handoff.id == handoff_id)
+                .values(admin_message_id=admin_message_id)
+            )

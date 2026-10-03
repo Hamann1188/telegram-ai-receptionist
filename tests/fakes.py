@@ -10,6 +10,7 @@ from anthropic.types import Message
 
 from receptionist.core.agent import context_tokens
 from receptionist.core.ports import BookingRecord, NewBooking, SessionState, SlotTaken
+from receptionist.db.conversations import ChatRecord
 
 # --- Claude ------------------------------------------------------------------
 
@@ -125,6 +126,59 @@ class FakeConversationStore:
         return [{"role": role, "content": json.loads(c)} for role, c, _ in rows]
 
 
+# --- chats and the admin relay -------------------------------------------------
+
+
+class FakeChats:
+    def __init__(self) -> None:
+        self.rows: dict[int, ChatRecord] = {}  # by Telegram chat id
+        self.usage: list[dict] = []
+        self.forgotten: list[int] = []
+
+    async def ensure(self, tg_chat_id, language, display_name=None) -> ChatRecord:
+        old = self.rows.get(tg_chat_id)
+        record = ChatRecord(
+            id=old.id if old else len(self.rows) + 1,
+            tg_chat_id=tg_chat_id,
+            language=language or (old.language if old else None),
+            mode=old.mode if old else "bot",
+            display_name=display_name or (old.display_name if old else None),
+        )
+        self.rows[tg_chat_id] = record
+        return record
+
+    async def find(self, tg_chat_id):
+        return self.rows.get(tg_chat_id)
+
+    async def get(self, chat_id):
+        return next((row for row in self.rows.values() if row.id == chat_id), None)
+
+    async def set_mode(self, chat_id, mode, at) -> bool:
+        row = await self.get(chat_id)
+        if row is None or row.mode == mode:
+            return False
+        self.rows[row.tg_chat_id] = replace(row, mode=mode)
+        return True
+
+    async def usage_since(self, chat_id, since):
+        return self.usage
+
+    async def forget(self, tg_chat_id):
+        self.forgotten.append(tg_chat_id)
+        return self.rows.pop(tg_chat_id, None) is not None
+
+
+class FakeRelays:
+    def __init__(self) -> None:
+        self.map: dict[tuple[int, int], int] = {}
+
+    async def record(self, admin_chat_id, admin_message_id, chat_id) -> None:
+        self.map.setdefault((admin_chat_id, admin_message_id), chat_id)
+
+    async def chat_for(self, admin_chat_id, admin_message_id):
+        return self.map.get((admin_chat_id, admin_message_id))
+
+
 # --- bookings, handoffs, notifications ----------------------------------------
 
 
@@ -175,6 +229,10 @@ class FakeHandoffs:
     async def open(self, chat_id: int, reason: str, summary: str) -> int:
         self.opened.append((chat_id, reason, summary))
         return len(self.opened)
+
+    async def set_admin_message(self, handoff_id: int, admin_message_id: int) -> None:
+        self.admin_messages = getattr(self, "admin_messages", {})
+        self.admin_messages[handoff_id] = admin_message_id
 
 
 class RecordingNotifier:

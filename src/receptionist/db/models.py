@@ -42,6 +42,18 @@ class Chat(Base):
     language: Mapped[str | None] = mapped_column(String(2))
     mode: Mapped[str] = mapped_column(String(16), server_default="bot")
     created_at: Mapped[datetime] = _created_at()
+    display_name: Mapped[str | None] = mapped_column(String(200))  # Telegram name, @username
+
+
+class RelayMessage(Base):
+    """A bot message in the admin group and the patient chat it belongs to."""
+
+    __tablename__ = "relay_messages"
+
+    admin_chat_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    admin_message_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    chat_id: Mapped[int] = mapped_column(ForeignKey("chats.id", ondelete="CASCADE"), index=True)
+    created_at: Mapped[datetime] = _created_at()
 
 
 class Session(Base):

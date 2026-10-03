@@ -6,13 +6,16 @@ from aiogram import Bot
 from receptionist.app import LoggingNotifier, build_assistant
 from receptionist.config import Settings
 from receptionist.core.clinic import load_clinic
-from receptionist.db.conversations import SqlChatRepository
-from receptionist.db.repositories import SqlBookingRepository
+from receptionist.db.conversations import SqlChatRepository, SqlRelayRepository
+from receptionist.db.repositories import SqlBookingRepository, SqlHandoffRepository
 from receptionist.db.session import create_engine, create_session_factory
 from receptionist.llm import make_client
-from receptionist.telegram.bot import NO_TOKEN, run_polling
+from receptionist.telegram.admin import AdminDesk
+from receptionist.telegram.bot import NO_TOKEN, build_dispatcher, run_polling
 from receptionist.telegram.ratelimit import RateLimiter
 from receptionist.telegram.service import ChatService
+
+logger = logging.getLogger("receptionist")
 
 
 async def run(settings: Settings) -> None:
@@ -24,21 +27,42 @@ async def run(settings: Settings) -> None:
     clinic = load_clinic(settings.clinic_file)
     engine = create_engine(settings)
     sessions = create_session_factory(engine)
+    bot = Bot(settings.bot_token.get_secret_value())
+    chats = SqlChatRepository(sessions)
+
+    desk = None
     notifier = LoggingNotifier()
+    if settings.admin_chat_id is not None:
+        desk = AdminDesk(
+            bot,
+            settings.admin_chat_id,
+            settings.admin_language,
+            clinic,
+            chats,
+            SqlRelayRepository(sessions),
+            SqlHandoffRepository(sessions),
+        )
+        notifier = desk
+    else:
+        logger.warning("No RECEPTIONIST_ADMIN_CHAT_ID: notifications go to the log only")
+
+    assistant = build_assistant(settings, client, clinic, sessions, notifier)
+    if desk is not None:
+        desk.attach(assistant)
     service = ChatService(
-        build_assistant(settings, client, clinic, sessions, notifier),
-        SqlChatRepository(sessions),
+        assistant,
+        chats,
         SqlBookingRepository(sessions),
         notifier,
         clinic,
         RateLimiter(settings.rate_limit_messages, settings.rate_limit_window_s),
         model=settings.model,
+        desk=desk,
         max_message_chars=settings.max_message_chars,
         daily_budget_usd=settings.daily_budget_usd,
     )
-    bot = Bot(settings.bot_token.get_secret_value())
     try:
-        await run_polling(bot, service)
+        await run_polling(bot, build_dispatcher(service, desk, settings.admin_chat_id))
     finally:
         await client.close()
         await engine.dispose()

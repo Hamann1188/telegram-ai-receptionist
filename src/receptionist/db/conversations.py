@@ -8,7 +8,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from receptionist.core.agent import context_tokens
 from receptionist.core.ports import SessionState
-from receptionist.db.models import Chat, Message, Session
+from receptionist.db.models import Chat, Handoff, Message, RelayMessage, Session
 from receptionist.db.repositories import Sessions
 
 
@@ -87,37 +87,66 @@ class ChatRecord:
     tg_chat_id: int
     language: str | None
     mode: str
+    display_name: str | None = None
+
+    @property
+    def label(self) -> str:
+        """How operators see the chat: name, @username and our chat id."""
+        return f"{self.display_name} (#{self.id})" if self.display_name else f"#{self.id}"
+
+
+_CHAT_COLUMNS = (Chat.id, Chat.tg_chat_id, Chat.language, Chat.mode, Chat.display_name)
 
 
 class SqlChatRepository:
     def __init__(self, sessions: Sessions) -> None:
         self._sessions = sessions
 
-    async def ensure(self, tg_chat_id: int, language: str | None) -> ChatRecord:
-        """The chat's record, created on first contact; the language is kept current."""
-        new = pg_insert(Chat).values(tg_chat_id=tg_chat_id, language=language)
+    async def ensure(
+        self, tg_chat_id: int, language: str | None, display_name: str | None = None
+    ) -> ChatRecord:
+        """The chat's record, created on first contact; language and name kept current."""
+        new = pg_insert(Chat).values(
+            tg_chat_id=tg_chat_id, language=language, display_name=display_name
+        )
         stmt = new.on_conflict_do_update(
             index_elements=[Chat.tg_chat_id],
-            set_={"language": func.coalesce(new.excluded.language, Chat.language)},
-        ).returning(Chat.id, Chat.tg_chat_id, Chat.language, Chat.mode)
+            set_={
+                "language": func.coalesce(new.excluded.language, Chat.language),
+                "display_name": func.coalesce(new.excluded.display_name, Chat.display_name),
+            },
+        ).returning(*_CHAT_COLUMNS)
         async with self._sessions.begin() as db:
             row = (await db.execute(stmt)).one()
         return ChatRecord(*row)
 
     async def find(self, tg_chat_id: int) -> ChatRecord | None:
+        return await self._one(Chat.tg_chat_id == tg_chat_id)
+
+    async def get(self, chat_id: int) -> ChatRecord | None:
+        return await self._one(Chat.id == chat_id)
+
+    async def _one(self, condition) -> ChatRecord | None:
         async with self._sessions() as db:
-            row = (
-                await db.execute(
-                    select(Chat.id, Chat.tg_chat_id, Chat.language, Chat.mode).where(
-                        Chat.tg_chat_id == tg_chat_id
-                    )
-                )
-            ).one_or_none()
+            row = (await db.execute(select(*_CHAT_COLUMNS).where(condition))).one_or_none()
         return ChatRecord(*row) if row else None
 
-    async def set_mode(self, chat_id: int, mode: str) -> None:
+    async def set_mode(self, chat_id: int, mode: str, at: datetime) -> bool:
+        """Switch between the bot and a human operator; False if already in `mode`.
+
+        Back to the bot also closes the chat's open handoffs.
+        """
         async with self._sessions.begin() as db:
-            await db.execute(update(Chat).where(Chat.id == chat_id).values(mode=mode))
+            result = await db.execute(
+                update(Chat).where(Chat.id == chat_id, Chat.mode != mode).values(mode=mode)
+            )
+            if mode == "bot":
+                await db.execute(
+                    update(Handoff)
+                    .where(Handoff.chat_id == chat_id, Handoff.closed_at.is_(None))
+                    .values(closed_at=at)
+                )
+        return result.rowcount > 0
 
     async def usage_since(self, chat_id: int, since: datetime) -> list[dict]:
         """`usage` of the chat's Claude replies stored after `since`."""
@@ -139,3 +168,27 @@ class SqlChatRepository:
         async with self._sessions.begin() as db:
             result = await db.execute(delete(Chat).where(Chat.tg_chat_id == tg_chat_id))
         return result.rowcount > 0
+
+
+class SqlRelayRepository:
+    """Which patient chat each bot message in the admin group belongs to."""
+
+    def __init__(self, sessions: Sessions) -> None:
+        self._sessions = sessions
+
+    async def record(self, admin_chat_id: int, admin_message_id: int, chat_id: int) -> None:
+        stmt = (
+            pg_insert(RelayMessage)
+            .values(admin_chat_id=admin_chat_id, admin_message_id=admin_message_id, chat_id=chat_id)
+            .on_conflict_do_nothing()
+        )
+        async with self._sessions.begin() as db:
+            await db.execute(stmt)
+
+    async def chat_for(self, admin_chat_id: int, admin_message_id: int) -> int | None:
+        stmt = select(RelayMessage.chat_id).where(
+            RelayMessage.admin_chat_id == admin_chat_id,
+            RelayMessage.admin_message_id == admin_message_id,
+        )
+        async with self._sessions() as db:
+            return await db.scalar(stmt)

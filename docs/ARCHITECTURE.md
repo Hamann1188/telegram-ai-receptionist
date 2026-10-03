@@ -110,13 +110,23 @@ Enum values are compared case-insensitively, because strict mode doesn't guarant
 
 - **Operator mode:**
   - the bot stops calling Claude for that chat;
-  - user messages are forwarded to the admin group;
-  - an admin's reply to a forwarded message is sent back to the user;
-  - the "Return to bot" button ends operator mode and starts a new session.
+  - the patient's messages go to the admin group, with no reply in the chat:
+    - text as "💬 name @username (#id): text";
+    - photos, voice messages and files are copied under such a header;
+  - an operator's reply (Telegram Reply) to any bot message about that chat is copied to the patient, text or media, without a "forwarded" label. A 👍 reaction confirms delivery. If the patient blocked the bot, a notice appears in the group;
+  - "Return to bot" ends operator mode and closes the open handoffs in one transaction, starts a new session and tells the patient;
+  - `/start` from the patient does the same and posts a note to the group.
 - **Triggers:**
-  - the user asks for a person;
-  - the model calls `handoff_to_human` (complaints, medical questions beyond the FAQ, repeated misunderstanding);
-  - an admin presses "Take over".
+  - the model calls `handoff_to_human`: a person was asked for, a complaint, a medical question, an emergency, or repeated misunderstanding. The group gets a card with the reason, the model's summary and "Return to bot";
+  - an operator presses "Take over" on a booking card. The patient is told a staff member has joined.
+- **Admin group** (`telegram/admin.py`, `AdminDesk`):
+  - it implements the `Notifier` port: booking cards (created and cancelled, with "Take over" while the bot handles the chat) and handoff cards;
+  - every bot message about a patient is recorded in `relay_messages` (admin message id → chat), so replies route to the right patient and `/forget` deletes the mapping with the chat;
+  - texts are in `RECEPTIONIST_ADMIN_LANGUAGE` (ru, uz or en).
+  - Buttons work only in the configured group: the router filters by chat id, and only members see the group.
+  - The bot needs no admin rights there. With privacy mode on (the default), Telegram delivers replies to the bot's messages and commands, which is all the relay needs.
+- **Setup:** `/chatid` in any group replies with that group's id. Put it in `.env` as `RECEPTIONIST_ADMIN_CHAT_ID` and restart.
+- **No admin group configured:** notifications go to the log. A chat in operator mode gets "can't reach staff, call {clinic phone}, or /start for the bot". The same reply comes when the group can't be reached.
 
 ## 7. Data model
 
@@ -131,6 +141,8 @@ bookings   id · chat_id FK · service_id · resource · slot_start · slot_end 
            EXCLUDE USING gist (resource WITH =, tstzrange(slot_start, slot_end) WITH &&)
              WHERE status = 'confirmed'                      -- no overlaps per resource (ADR-8)
 handoffs   id · chat_id FK · reason · summary · admin_message_id · opened_at · closed_at
+relay_messages  admin_chat_id · admin_message_id (PK) · chat_id FK · created_at   -- admin-group routing
+chats.display_name: Telegram name and @username, shown to operators
 ```
 
 Every foreign key to `chats` cascades on delete, so `/forget` deletes one row. Times are `timestamptz`; the clinic's time zone (Asia/Tashkent) applies only when slots are generated and shown.
@@ -202,6 +214,7 @@ Targets: all booking assertions pass, reply language matches in ≥ 95% of turns
 | ADR-9 | `create_booking` takes a local `date` and `HH:MM` `time` instead of a `slot_start` timestamp; `list_my_bookings` added | The model copies a date and a time from `find_free_slots` verbatim, so no UTC offsets can go wrong. A new session can still find a booking id to cancel. Trade-off: one more tool in the fixed tool list |
 | ADR-10 | `messages.content` is `json`, not `jsonb` (migration 0002) | jsonb stores a parsed form and reorders object keys, so a tool_use `input` read back differs from what the model produced. Replayed history must be byte-identical (thinking-block binding, prompt cache). Trade-off: no jsonb indexing on content, which nothing queries |
 | ADR-11 | The current time goes into each user message as a `<context>` block, not into the system prompt | The system prompt must not change within a session, but the model needs "now" to resolve "tomorrow". A block in the appended user message keeps the prefix intact. Trade-off: about 30 tokens per turn |
+| ADR-12 | Operator relay through a message map (`relay_messages`) and `copyMessage`, instead of forwarding with `forwardMessage` or parsing ids out of message text | A forwarded message only carries the sender when their privacy settings allow it, and text parsing breaks on edits. The map routes any reply, including to media and to the operator's own messages, and is deleted with the chat. `copyMessage` sends without a "forwarded from" label. Trade-off: one row per admin-group message |
 | ADR-7 | No server-side refusal fallback in v1 | It is a beta API. In a persisted multi-turn history it adds `fallback` blocks and sticky routing, and the fallback model cannot read Opus 5.5 thinking. Refusals are rare for a clinic FAQ bot and end in a handoff offer. Revisit if evals show refusals |
 
 ## 12. Extensions (offer as add-ons)

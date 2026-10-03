@@ -27,6 +27,7 @@ class ChatService:
         limiter: RateLimiter,
         *,
         model: str,
+        desk=None,
         max_message_chars: int = 2000,
         daily_budget_usd: float = 0.50,
         clock: Callable[[], datetime] = utc_now,
@@ -38,30 +39,49 @@ class ChatService:
         self._clinic = clinic
         self._limiter = limiter
         self._model = model
+        self._desk = desk  # AdminDesk, or None without an admin group
         self._max_chars = max_message_chars
         self._daily_budget = daily_budget_usd
         self._clock = clock
 
-    async def start(self, tg_chat_id: int, language_code: str | None) -> str:
+    async def start(
+        self, tg_chat_id: int, language_code: str | None, display_name: str | None = None
+    ) -> str:
         """/start: a fresh conversation with the bot, also out of operator mode."""
         language = language_from_code(language_code)
-        chat = await self._chats.ensure(tg_chat_id, language)
+        chat = await self._chats.ensure(tg_chat_id, language, display_name)
         if chat.mode != "bot":
-            await self._chats.set_mode(chat.id, "bot")
+            await self._chats.set_mode(chat.id, "bot", self._clock())
+            if self._desk is not None:
+                try:
+                    await self._desk.patient_restarted(chat)
+                except Exception:
+                    logger.exception("Couldn't tell the admin group about /start")
         await self._assistant.reset(chat.id)
         return texts.GREETING[language]
 
-    async def text(self, tg_chat_id: int, language_code: str | None, text: str) -> list[str]:
-        """A patient's text message; returns the reply, split for Telegram."""
+    async def text(
+        self,
+        tg_chat_id: int,
+        language_code: str | None,
+        text: str,
+        display_name: str | None = None,
+    ) -> list[str]:
+        """A patient's text message; returns the replies to send, split for Telegram.
+
+        In operator mode the message goes to the admin group and nothing is replied.
+        """
         language = detect_language(text, language_from_code(language_code))
         if not self._limiter.allow(tg_chat_id):
             return [texts.RATE_LIMITED[language]]
         if len(text) > self._max_chars:
             return [texts.TOO_LONG[language].format(limit=self._max_chars)]
         try:
-            chat = await self._chats.ensure(tg_chat_id, language)
+            chat = await self._chats.ensure(tg_chat_id, language, display_name)
             if chat.mode == "operator":
-                return [texts.OPERATOR_MODE[language]]
+                if self._desk is not None and await self._desk.forward_text(chat, text):
+                    return []
+                return [self._no_staff(language)]
             if await self._spent_today(chat.id) >= self._daily_budget:
                 logger.warning("Chat %s reached its daily budget", chat.id)
                 return [texts.DAILY_LIMIT[language].format(phone=self._clinic.phone)]
@@ -71,8 +91,20 @@ class ChatService:
             return [fallback_text("error", language, self._clinic)]
         return texts.split_message(reply.text)
 
-    def unsupported(self, language_code: str | None) -> str:
-        return texts.UNSUPPORTED[language_from_code(language_code)]
+    async def media(self, tg_chat_id: int, language_code: str | None, message_id: int) -> list[str]:
+        """A photo, voice message, sticker or file: operators get it, the bot can't read it."""
+        language = language_from_code(language_code)
+        if not self._limiter.allow(tg_chat_id):
+            return [texts.RATE_LIMITED[language]]
+        chat = await self._chats.find(tg_chat_id)
+        if chat is None or chat.mode != "operator":
+            return [texts.UNSUPPORTED[language]]
+        if self._desk is not None and await self._desk.forward_file(chat, message_id):
+            return []
+        return [self._no_staff(language)]
+
+    def _no_staff(self, language: Language) -> str:
+        return texts.OPERATOR_NO_STAFF[language].format(phone=self._clinic.phone)
 
     async def forget_prompt(self, tg_chat_id: int, language_code: str | None) -> tuple[str, bool]:
         """/forget: the confirmation question, and whether to show the buttons."""
