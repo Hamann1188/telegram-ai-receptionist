@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
+    JSON,
     BigInteger,
     CheckConstraint,
     DateTime,
@@ -62,6 +63,8 @@ class Session(Base):
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Summary carried into the next session when this one is rotated (ARCHITECTURE §4).
     summary: Mapped[str | None] = mapped_column(Text)
+    # sha256 of model + system prompt + tools; a change starts a new session.
+    prompt_fingerprint: Mapped[str | None] = mapped_column(String(64))
 
 
 class Message(Base):
@@ -77,7 +80,9 @@ class Message(Base):
     session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"))
     ordinal: Mapped[int] = mapped_column(Integer)
     role: Mapped[str] = mapped_column(String(16))
-    content: Mapped[Any] = mapped_column(JSONB)  # verbatim content blocks, thinking included
+    # Verbatim content blocks, thinking included. `json`, not `jsonb`: jsonb reorders
+    # object keys, and replayed history must be byte-identical (ADR-10).
+    content: Mapped[Any] = mapped_column(JSON)
     usage: Mapped[dict | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = _created_at()
 

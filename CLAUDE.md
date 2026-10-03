@@ -26,6 +26,7 @@ tests/
 | Database only (dev) | `wsl -d Ubuntu -- docker compose up -d db` |
 | Migrate | `uv run alembic upgrade head` |
 | Run bot (dev, long polling) | `uv run python -m receptionist` |
+| Console chat (real Claude and DB, about $0.01 per turn) | `uv run python -m receptionist.console --lang ru [--new] ["message" ...]` (chat id 0) |
 | Full stack | `wsl -d Ubuntu -- docker compose up -d --build` |
 | Lint / format | `uv run ruff check .` · `uv run ruff format .` |
 | Tests | `uv run pytest` |
@@ -78,7 +79,11 @@ Each step is one commit; tick it off in Status.
   - `core/ports.py` (repository and notifier interfaces), `core/tools.py` (7 strict tools and their handlers), `db/repositories.py`;
   - 125 tests: unit tests with in-memory fakes in `tests/fakes.py`, plus PostgreSQL tests, including two concurrent bookings of one slot where exactly one wins;
   - tool definitions depend only on `clinic.yaml`. Changing that file changes the tool list, so step 4 must rotate sessions whose stored tools fingerprint differs (append-only rule).
-- [ ] 4 Agent core
+- [x] 4 Agent core (2026-10-03):
+  - `core/agent.py` (loop, sessions, rotation with summary), `core/prompts.py`, `db/conversations.py`, `app.py` wiring, `console.py`;
+  - migration 0002: `json` message content (ADR-10) and the session fingerprint;
+  - 154 tests. The fake client proves history is replayed byte-identical and tool results are paired by id;
+  - live check through the console: a Russian booking flow, an Uzbek list of bookings, and an emergency that triggered a handoff with 103. No 400 over 6 replayed turns, the cache worked, and the run cost about $0.08.
 - [ ] 5 Telegram adapter
 - [ ] 6 Handoff and admin group
 - [ ] 7 Evals

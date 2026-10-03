@@ -1,9 +1,131 @@
-"""In-memory implementations of the core ports for unit tests."""
+"""In-memory implementations of the core ports, and a scripted Claude client."""
 
+import asyncio
+import copy
+import json
 from dataclasses import asdict, replace
 from datetime import datetime
 
-from receptionist.core.ports import BookingRecord, NewBooking, SlotTaken
+from anthropic.types import Message
+
+from receptionist.core.agent import context_tokens
+from receptionist.core.ports import BookingRecord, NewBooking, SessionState, SlotTaken
+
+# --- Claude ------------------------------------------------------------------
+
+
+def thinking(signature: str = "sig-1") -> dict:
+    # Claude Opus 5.5 returns thinking text empty by default; the signature matters.
+    return {"type": "thinking", "thinking": "", "signature": signature}
+
+
+def text(value: str) -> dict:
+    return {"type": "text", "text": value}
+
+
+def tool_use(block_id: str, name: str, tool_input: dict) -> dict:
+    return {"type": "tool_use", "id": block_id, "name": name, "input": tool_input}
+
+
+def message(
+    *blocks: dict,
+    stop_reason: str = "end_turn",
+    input_tokens: int = 1000,
+    output_tokens: int = 50,
+    cache_read: int = 0,
+    model: str = "claude-opus-5-5",
+) -> Message:
+    return Message.model_validate(
+        {
+            "id": "msg_test",
+            "type": "message",
+            "role": "assistant",
+            "model": model,
+            "content": list(blocks),
+            "stop_reason": stop_reason,
+            "stop_sequence": None,
+            "usage": {
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "cache_read_input_tokens": cache_read,
+                "cache_creation_input_tokens": 0,
+            },
+        }
+    )
+
+
+class FakeClaude:
+    """Returns scripted responses (or raises scripted errors) and records requests."""
+
+    def __init__(self, *responses, delay: float = 0.0) -> None:
+        self.responses = list(responses)
+        self.requests: list[dict] = []
+        self.delay = delay
+        self.messages = self  # client.messages.create(...)
+
+    async def create(self, **kwargs):
+        self.requests.append(copy.deepcopy(kwargs))
+        if self.delay:
+            await asyncio.sleep(self.delay)
+        if not self.responses:
+            raise AssertionError("FakeClaude ran out of scripted responses")
+        item = self.responses.pop(0)
+        if isinstance(item, Exception):
+            raise item
+        return item
+
+
+# --- conversation store ------------------------------------------------------
+
+
+class FakeConversationStore:
+    """Keeps content as JSON text, like the database, so tests see a real round trip."""
+
+    def __init__(self) -> None:
+        self.sessions: dict[int, dict] = {}
+
+    async def current_session(self, chat_id: int) -> SessionState | None:
+        for session_id, s in self.sessions.items():
+            if s["chat_id"] == chat_id and s["ended_at"] is None:
+                rows = s["rows"]
+                last_assistant = next((r for r in reversed(rows) if r[0] == "assistant"), None)
+                return SessionState(
+                    id=session_id,
+                    fingerprint=s["fingerprint"],
+                    messages=[{"role": role, "content": json.loads(c)} for role, c, _ in rows],
+                    last_activity=s["last_activity"],
+                    context_tokens=context_tokens(last_assistant[2] if last_assistant else None),
+                )
+        return None
+
+    async def start_session(self, chat_id: int, fingerprint: str, at: datetime) -> SessionState:
+        session_id = len(self.sessions) + 1
+        self.sessions[session_id] = {
+            "chat_id": chat_id,
+            "fingerprint": fingerprint,
+            "rows": [],
+            "ended_at": None,
+            "summary": None,
+            "last_activity": at,
+        }
+        return SessionState(session_id, fingerprint, [], at, 0)
+
+    async def end_session(self, session_id: int, summary: str | None, at: datetime) -> None:
+        s = self.sessions[session_id]
+        if s["ended_at"] is None:
+            s["ended_at"], s["summary"] = at, summary
+
+    async def append(self, session_id, role, content, usage, at: datetime) -> None:
+        s = self.sessions[session_id]
+        s["rows"].append((role, json.dumps(content, ensure_ascii=False), usage))
+        s["last_activity"] = at
+
+    def history(self, session_id: int) -> list[dict]:
+        rows = self.sessions[session_id]["rows"]
+        return [{"role": role, "content": json.loads(c)} for role, c, _ in rows]
+
+
+# --- bookings, handoffs, notifications ----------------------------------------
 
 
 class FakeBookings:

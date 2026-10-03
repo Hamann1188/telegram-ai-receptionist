@@ -51,14 +51,26 @@ Ports and adapters: `core/` has no aiogram or SQLAlchemy imports and depends on 
 
 ## 4. Conversation design
 
-- **Sessions.** One active session per Telegram chat. A new session starts on `/start`, after 12 h of inactivity, when a handoff ends, or when the session passes its token budget. In the last case the new session opens with a summary of the old one as its first user message; the old history, including its thinking blocks, is not replayed.
-- **Append-only history.** Within a session every assistant message is stored exactly as the API returned it, thinking blocks included, and replayed unchanged. The system prompt and the tool list are fixed for the session's lifetime. Claude Opus 5.5 rejects edited history on new accounts, and an untouched prefix keeps prompt-cache hits high.
-- **Prompt caching:** automatic top-level caching reuses the tools + system + history prefix every turn.
-- **Agent loop (manual, no beta APIs):**
-  1. Call Claude.
-  2. If `stop_reason == "tool_use"`, run every tool call, append one `tool_result` per call, and call again.
-  3. Stop after at most 6 iterations, then answer.
-- **Model:** `claude-opus-5-5`, effort `low` for chat latency (raise to `medium` only if evals require it), `max_tokens = 4000`.
+- **Sessions.** One active session per Telegram chat. A new session starts on:
+  - `/start`;
+  - 12 h of inactivity;
+  - the end of a handoff;
+  - a change of model, system prompt or tools (the session stores a sha256 fingerprint of all three);
+  - a refusal, a cut-off tool call, or a reply without text: such a turn isn't kept;
+  - the session passing its context budget of 30,000 tokens. In this case a separate Claude call (effort `low`, no tools) summarises the transcript, and the new session's first user message opens with `<previous_conversation_summary>`. The old history, including its thinking blocks, is not replayed.
+- **Append-only history.** Every message is stored as sent, and every assistant message exactly as the API returned it, thinking blocks included. Blocks are serialized the way the SDK does (`model_dump(mode="json", exclude_unset=True, by_alias=True)`) and stored in a `json` column, which preserves the key order of tool inputs (ADR-10). The system prompt and the tool list are fixed for the session's lifetime. Claude Opus 5.5 rejects edited history on new accounts, and an untouched prefix keeps prompt-cache hits high.
+- **Per-turn context.** The system prompt holds no date. Each patient message is sent as up to three text blocks: an optional summary, `<context>` (current weekday, date and time in Asia/Tashkent, and the Telegram app language), then the patient's text (ADR-11). Timestamps of messages and sessions come from the agent's clock, not the database's, so the idle timeout and `<context>` share one time source.
+- **Prompt caching:** automatic top-level caching (`cache_control: {type: "ephemeral"}`) reuses the tools + system + history prefix every turn. In the first real run, every turn after the first read 3–14k tokens from cache and paid full price for 6.
+- **Agent loop (`core/agent.py`, manual, no beta APIs):**
+  1. Store the user message, then call Claude.
+  2. `stop_reason == "refusal"`: polite fallback text in the chat's language and a fresh session.
+  3. `max_tokens` with a tool call: the call is not run, and the session ends.
+  4. Otherwise store the assistant message. For `tool_use`, run every call in order, append one `tool_result` per call, matched by `tool_use_id`, as the next user message, and call again.
+  5. Stop after at most 6 calls; the history stays valid because every call has its result.
+- **Failures.** On an API error the patient gets a "try again or call" text with the clinic phone. The stored user message stays, and the next turn sends it again, followed by the new one.
+- **Concurrency.** An in-process lock per chat serializes turns, so ordinals stay in order (single bot instance).
+- **Model:** `claude-opus-5-5`, effort `low` for chat latency (raise to `medium` only if evals require it), `max_tokens = 8000`, which covers adaptive thinking plus the reply. Non-streaming calls, timeout 90 s, 2 SDK retries.
+- **Console chat:** `python -m receptionist.console` drives the same assistant from a terminal with the real database and Claude, for debugging and evals.
 - **Responsiveness:** Telegram has no token streaming for bots, so the bot shows the "typing…" action while the loop runs.
 
 ## 5. Tools
@@ -185,6 +197,8 @@ Targets: all booking assertions pass, reply language matches in ≥ 95% of turns
 | ADR-6 | PostgreSQL instead of SQLite | Concurrent writes; transactional booking with a unique constraint; same database as project 1 |
 | ADR-8 | Bookings belong to a resource, and overlaps are prevented by a PostgreSQL exclusion constraint (`btree_gist`), instead of `UNIQUE (slot_start)` | A unique start time doesn't stop a 60-minute visit at 10:00 from overlapping one at 10:30, and it would let only one patient in at a time for the whole clinic. The constraint makes double booking impossible even under concurrent requests. Truly simultaneous inserts can deadlock: each waits for the other's uncommitted row. CI saw this; local runs over the WSL port forward never did. The repository therefore retries deadlock and serialization failures up to 3 times, and the retry ends as a plain exclusion violation, which becomes `SlotTaken`. Trade-off: a PostgreSQL extension (contrib, trusted, present in the official image) |
 | ADR-9 | `create_booking` takes a local `date` and `HH:MM` `time` instead of a `slot_start` timestamp; `list_my_bookings` added | The model copies a date and a time from `find_free_slots` verbatim, so no UTC offsets can go wrong. A new session can still find a booking id to cancel. Trade-off: one more tool in the fixed tool list |
+| ADR-10 | `messages.content` is `json`, not `jsonb` (migration 0002) | jsonb stores a parsed form and reorders object keys, so a tool_use `input` read back differs from what the model produced. Replayed history must be byte-identical (thinking-block binding, prompt cache). Trade-off: no jsonb indexing on content, which nothing queries |
+| ADR-11 | The current time goes into each user message as a `<context>` block, not into the system prompt | The system prompt must not change within a session, but the model needs "now" to resolve "tomorrow". A block in the appended user message keeps the prefix intact. Trade-off: about 30 tokens per turn |
 | ADR-7 | No server-side refusal fallback in v1 | It is a beta API. In a persisted multi-turn history it adds `fallback` blocks and sticky routing, and the fallback model cannot read Opus 5.5 thinking. Refusals are rare for a clinic FAQ bot and end in a handoff offer. Revisit if evals show refusals |
 
 ## 12. Extensions (offer as add-ons)

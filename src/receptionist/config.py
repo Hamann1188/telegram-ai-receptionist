@@ -27,5 +27,9 @@ class Settings(BaseSettings):
     # ANTHROPIC_BASE_URL (e.g. a local proxy) is never picked up.
     anthropic_base_url: str = "https://api.anthropic.com"
     model: str = "claude-opus-5-5"
+    # Chat latency matters more than depth here; raise only if evals show a need.
+    effort: str = "low"  # low | medium | high | xhigh | max
+    max_tokens: int = 8000  # covers adaptive thinking plus the reply
+    anthropic_timeout_s: float = 90.0
 
     database_url: str = "postgresql+asyncpg://receptionist:receptionist@localhost:5433/receptionist"
