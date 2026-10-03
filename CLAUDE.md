@@ -88,9 +88,9 @@ Each step is one commit; tick it off in Status.
   - live check through the console: a Russian booking flow, an Uzbek list of bookings, and an emergency that triggered a handoff with 103. No 400 over 6 replayed turns, the cache worked, and the run cost about $0.08.
 - [x] 5 Telegram adapter (2026-10-03):
   - `telegram/service.py` (ChatService), handlers, per-message language detection, rate limit, length and daily-spend caps, `/forget` with confirmation;
-  - the owner chatted live in RU, UZ and EN, and a booking was made and cancelled end to end. Every reply carried an `antml_reply_` prefix, fixed by commit 4205adb; a live re-check is pending.
-- [ ] 6 Handoff and admin group (2026-10-03):
-  - code done: `telegram/admin.py` (AdminDesk: booking and handoff cards, relay map, Take over and Return to bot), `/chatid`, migration 0003, 216 tests;
-  - pending: a manual round trip in the owner's admin group.
+  - the owner chatted live in RU, UZ and EN, and a booking was made and cancelled end to end. Every reply carried an `antml_reply_` prefix; commit 4205adb fixed it. On re-check, 0 of 32 replies had the prefix.
+- [x] 6 Handoff and admin group (2026-10-04):
+  - `telegram/admin.py` (AdminDesk: booking and handoff cards, relay map, Take over and Return to bot), `/chatid`, migration 0003, 216 tests;
+  - live round trip in the owner's group "Registan Smile — Staff" (`RECEPTIONIST_ADMIN_CHAT_ID` in `.env`, a basic group): booking card, Take over, return, a model-called handoff with summary, operator reply and patient message relayed both ways, Return to bot with a fresh session. No errors in the logs.
 - [ ] 7 Evals
 - [ ] 8 README and video
