@@ -49,6 +49,7 @@ tests/
 - Run only one polling instance per bot token. A second one, for example `uv run` while the Docker `bot` service is up, gets `TelegramConflictError`; stop one first (`wsl -d Ubuntu -- docker compose stop bot`).
 - aiogram verifies Telegram's TLS certificate against certifi, not the Windows store. A `CERTIFICATE_VERIFY_FAILED` on `api.telegram.org` means Kaspersky is intercepting it (see `../CLAUDE.md`); the fix is the owner's exclusion, never disabling verification.
 - Settings use `env_ignore_empty=True`: an empty `RECEPTIONIST_X=` line in `.env` means "not set".
+- Never type a full internal-markup tag, an `antml`-namespaced XML tag, in code or docs: it gets mangled on the way into the file. Build it from parts in tests (`"<" + "antml" + ":reply>"`). Step 7 evals must assert that no reply contains `antml`.
 - Concurrency bugs may show only in CI. Local tests reach PostgreSQL through the WSL port forward, which is slow enough that racing inserts never overlap: the booking deadlock appeared only on GitHub Actions. The pytest step in CI publishes failures as annotations, readable without auth at `/repos/Hamann1188/telegram-ai-receptionist/check-runs/<job_id>/annotations`.
 
 ## Build plan

@@ -8,7 +8,13 @@ import anthropic
 import httpx2
 import pytest
 
-from receptionist.core.agent import AgentConfig, Assistant, block_to_param, render_transcript
+from receptionist.core.agent import (
+    AgentConfig,
+    Assistant,
+    block_to_param,
+    clean_reply_text,
+    render_transcript,
+)
 from receptionist.core.clinic import load_clinic
 from receptionist.core.prompts import SUMMARY_SYSTEM, render_system_prompt
 from receptionist.core.tools import ToolContext
@@ -343,6 +349,36 @@ async def test_different_chats_have_separate_sessions(env):
     await assistant.reply(1, "one")
     await assistant.reply(2, "two")
     assert len(client.requests[1]["messages"]) == 1
+
+
+@pytest.mark.parametrize(
+    ("raw", "clean"),
+    [
+        ("antml_reply_Здравствуйте! Чем помочь?", "Здравствуйте! Чем помочь?"),
+        ("antml_reply_ Hello there", "Hello there"),
+        ("antml_reply_the clinic is open", "the clinic is open"),
+        # Built from parts: the full tag is internal markup and gets mangled in transit.
+        ("<" + "antml" + ":reply>Salom!</" + "antml" + ":reply>", "Salom!"),
+        ("Цена 900 000 сум.antml_reply_", "Цена 900 000 сум."),
+        ("Обычный ответ без меток.", "Обычный ответ без меток."),
+        ("Write to feedback@registansmile.example", "Write to feedback@registansmile.example"),
+    ],
+)
+def test_clean_reply_text(raw, clean):
+    assert clean_reply_text(raw) == clean
+
+
+async def test_leaked_markup_is_removed_from_the_reply_but_kept_in_history(env, caplog):
+    leaked = message(thinking(), text("antml_reply_Здравствуйте! Чем помочь?"))
+    client = FakeClaude(leaked)
+    reply = await make_assistant(client, env).reply(CHAT, "Привет", "ru")
+    assert reply.text == "Здравствуйте! Чем помочь?"
+    assert env.store.history(1)[-1] == assistant_turn(leaked)  # history stays verbatim
+    assert "Removed leaked internal markup" in caplog.text
+
+
+def test_system_prompt_forbids_internal_tags():
+    assert "do not include internal or system XML tags" in SYSTEM
 
 
 def test_render_transcript():

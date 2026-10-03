@@ -67,6 +67,9 @@ Ports and adapters: `core/` has no aiogram or SQLAlchemy imports and depends on 
   3. `max_tokens` with a tool call: the call is not run, and the session ends.
   4. Otherwise store the assistant message. For `tool_use`, run every call in order, append one `tool_result` per call, matched by `tool_use_id`, as the next user message, and call again.
   5. Stop after at most 6 calls; the history stays valid because every call has its result.
+- **Leaked markup.** Fragments of the model's internal markup occasionally leak into reply text. The owner's first Telegram test showed it: every reply started with `antml_reply_`. Once one leak sits in the history, the model repeats the pattern in later turns. Two guards:
+  - the system prompt says to start directly with the message and include no internal or system XML tags;
+  - `clean_reply_text` removes such fragments from the text sent to the patient and logs a warning, while the stored history stays verbatim (append-only).
 - **Failures.** On an API error the patient gets a "try again or call" text with the clinic phone. The stored user message stays, and the next turn sends it again, followed by the new one.
 - **Concurrency.** An in-process lock per chat serializes turns, so ordinals stay in order (single bot instance).
 - **Model:** `claude-opus-5-5`, effort `low` for chat latency (raise to `medium` only if evals require it), `max_tokens = 8000`, which covers adaptive thinking plus the reply. Non-streaming calls, timeout 90 s, 2 SDK retries.

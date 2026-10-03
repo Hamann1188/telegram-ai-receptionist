@@ -11,6 +11,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import re
 import weakref
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -24,6 +25,20 @@ from receptionist.core.prompts import SUMMARY_SYSTEM, context_block, fallback_te
 from receptionist.core.tools import ToolContext, run_tool, tool_definitions
 
 logger = logging.getLogger(__name__)
+
+# Fragments of the model's internal markup that occasionally leak into reply text,
+# e.g. "antml_reply_Здравствуйте!". Once one appears in a session the model tends to
+# repeat it, because it sees its own earlier replies.
+_LEAKED_MARKUP = re.compile(r"</?antml[:_][^>\s]*>|antml_[a-z]+_?|antml:[a-z_]+")
+
+
+def clean_reply_text(text: str) -> str:
+    """Remove leaked internal markup from a reply before it reaches the patient.
+
+    Only the delivered text is cleaned; stored history stays verbatim.
+    """
+    return _LEAKED_MARKUP.sub("", text).strip()
+
 
 # USD per million tokens: input, output, cache read. Cache writes cost 1.25x input.
 PRICES: dict[str, tuple[float, float, float]] = {
@@ -163,9 +178,12 @@ class Assistant:
             )
 
             if response.stop_reason != "tool_use" or not tool_uses:
-                reply_text = "\n\n".join(
+                raw = "\n\n".join(
                     b.text.strip() for b in response.content if b.type == "text" and b.text.strip()
                 )
+                reply_text = clean_reply_text(raw)
+                if reply_text != raw.strip():
+                    logger.warning("Removed leaked internal markup from a reply")
                 if not reply_text:
                     # A reply holding only thinking is no use to the patient, and an
                     # assistant turn without text or tool calls is risky to replay.
