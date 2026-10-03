@@ -93,13 +93,17 @@ async def test_overlap_raises_slot_taken(repo, chats):
 
 
 async def test_concurrent_bookings_of_one_slot_let_exactly_one_through(repo, chats):
+    """Truly simultaneous inserts can deadlock in PostgreSQL; the repository must still
+    report SlotTaken. Repeated, because one race may not hit the deadlock."""
     chat, other = chats
-    results = await asyncio.gather(
-        repo.create(new_booking(chat, at(10))),
-        repo.create(new_booking(other, at(10))),
-        return_exceptions=True,
-    )
-    assert sorted(type(r).__name__ for r in results) == ["BookingRecord", "SlotTaken"]
+    for hour in range(9, 19):
+        results = await asyncio.gather(
+            repo.create(new_booking(chat, at(hour))),
+            repo.create(new_booking(other, at(hour))),
+            return_exceptions=True,
+        )
+        outcome = sorted(type(r).__name__ for r in results)
+        assert outcome == ["BookingRecord", "SlotTaken"], [repr(r)[:200] for r in results]
 
 
 async def test_double_booking_race_through_the_tool(sessions, chats, sql):

@@ -1,16 +1,21 @@
 """PostgreSQL implementations of the core ports."""
 
+import logging
 from datetime import datetime
 
 from sqlalchemy import select, update
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from receptionist.core.ports import BookingRecord, NewBooking, SlotTaken
 from receptionist.core.slots import Interval
 from receptionist.db.models import Booking, Chat, Handoff
 
+logger = logging.getLogger(__name__)
+
 EXCLUSION_VIOLATION = "23P01"  # SQLSTATE of ex_bookings_no_overlap
+RETRYABLE = {"40P01", "40001"}  # deadlock_detected, serialization_failure
+MAX_INSERT_ATTEMPTS = 3
 
 Sessions = async_sessionmaker[AsyncSession]
 
@@ -48,27 +53,39 @@ class SqlBookingRepository:
             return [(row.slot_start, row.slot_end) for row in await session.execute(stmt)]
 
     async def create(self, booking: NewBooking) -> BookingRecord:
-        row = Booking(
-            chat_id=booking.chat_id,
-            service_id=booking.service_id,
-            resource=booking.resource,
-            slot_start=booking.slot_start,
-            slot_end=booking.slot_end,
-            patient_name=booking.patient_name,
-            phone=booking.phone,
-            status="confirmed",
-        )
-        async with self._sessions() as session:
-            session.add(row)
-            try:
-                await session.commit()
-            except IntegrityError as exc:
-                # The exclusion constraint is the real guard against double booking:
-                # it holds even when two requests pass the free-slot check together.
-                if getattr(exc.orig, "sqlstate", None) == EXCLUSION_VIOLATION:
-                    raise SlotTaken from exc
-                raise
-        return _record(row)
+        """Insert a confirmed booking; SlotTaken if it overlaps another.
+
+        The exclusion constraint is the real guard against double booking: it holds
+        even when two requests pass the free-slot check together. When both inserts
+        are in flight at once, each waits for the other's row and PostgreSQL aborts
+        one with a deadlock. Retrying then hits the committed row and becomes a plain
+        exclusion violation.
+        """
+        for attempt in range(1, MAX_INSERT_ATTEMPTS + 1):
+            row = Booking(
+                chat_id=booking.chat_id,
+                service_id=booking.service_id,
+                resource=booking.resource,
+                slot_start=booking.slot_start,
+                slot_end=booking.slot_end,
+                patient_name=booking.patient_name,
+                phone=booking.phone,
+                status="confirmed",
+            )
+            async with self._sessions() as session:
+                session.add(row)
+                try:
+                    await session.commit()
+                except DBAPIError as exc:
+                    sqlstate = getattr(exc.orig, "sqlstate", None)
+                    if sqlstate == EXCLUSION_VIOLATION:
+                        raise SlotTaken from exc
+                    if sqlstate in RETRYABLE and attempt < MAX_INSERT_ATTEMPTS:
+                        logger.info("Booking insert hit SQLSTATE %s, retrying", sqlstate)
+                        continue
+                    raise
+            return _record(row)
+        raise AssertionError("unreachable")
 
     async def upcoming_for_chat(self, chat_id: int, now: datetime) -> list[BookingRecord]:
         stmt = (
