@@ -32,8 +32,16 @@ jobs:
       - run: uv sync --locked
       - run: uv run ruff check .
       - run: uv run ruff format --check .
+      # Job logs need repo admin rights to download, so the summary and every failure
+      # are also published as annotations, which the public API returns.
       - name: pytest
-        shell: bash  # -eo pipefail, so a failing pytest still fails the step
+        shell: bash
         run: |
-          uv run pytest -rs | tee pytest.log
+          set +e
+          uv run pytest -rfEs | tee pytest.log
+          status=${PIPESTATUS[0]}
           echo "::notice title=pytest::$(tail -n 1 pytest.log)"
+          grep -E "^(FAILED|ERROR) " pytest.log | head -n 20 | while IFS= read -r line; do
+            echo "::error title=pytest::${line}"
+          done
+          exit "$status"
