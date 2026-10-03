@@ -99,6 +99,24 @@ async def test_chat_records(sessions):
     assert await query(sessions, "SELECT count(*) FROM chats") == [(0,)]
 
 
+async def test_chat_mode_lookup_and_usage_window(sessions, chat_id):
+    chats = SqlChatRepository(sessions)
+    assert (await chats.find(5001)).mode == "bot"
+    assert await chats.find(9999) is None
+    await chats.set_mode(chat_id, "operator")
+    assert (await chats.find(5001)).mode == "operator"
+
+    store = SqlConversationStore(sessions)
+    session = await store.start_session(chat_id, "a" * 64, T0)
+    usage = {"input_tokens": 10, "output_tokens": 5}
+    await store.append(session.id, "user", [{"type": "text", "text": "q"}], None, T0)
+    await store.append(session.id, "assistant", [{"type": "text", "text": "old"}], usage, T0)
+    later = T0 + timedelta(hours=30)
+    await store.append(session.id, "assistant", [{"type": "text", "text": "new"}], usage, later)
+    assert await chats.usage_since(chat_id, later - timedelta(hours=24)) == [usage]
+    assert len(await chats.usage_since(chat_id, T0)) == 2
+
+
 async def test_agent_with_the_database_replays_history_exactly(sessions, chat_id):
     store = SqlConversationStore(sessions)
     clock = {"now": T0}

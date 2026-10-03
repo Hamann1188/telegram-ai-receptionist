@@ -88,7 +88,9 @@ class Assistant:
             ).encode()
         ).hexdigest()
 
-    def _lock(self, chat_id: int) -> asyncio.Lock:
+    def lock(self, chat_id: int) -> asyncio.Lock:
+        """The per-chat lock that serializes turns. Hold it to change a chat's data
+        without racing a reply (e.g. /forget)."""
         lock = self._locks.get(chat_id)
         if lock is None:
             lock = self._locks[chat_id] = asyncio.Lock()
@@ -96,14 +98,14 @@ class Assistant:
 
     async def reset(self, chat_id: int) -> None:
         """End the chat's session, e.g. on /start; the next message starts fresh."""
-        async with self._lock(chat_id):
+        async with self.lock(chat_id):
             session = await self._store.current_session(chat_id)
             if session is not None:
                 await self._store.end_session(session.id, None, self._clock())
 
     async def reply(self, chat_id: int, text: str, language: str | None = None) -> AgentReply:
         # One turn at a time per chat: messages are appended in order.
-        async with self._lock(chat_id):
+        async with self.lock(chat_id):
             return await self._reply(chat_id, text, language)
 
     async def _reply(self, chat_id: int, text: str, language: str | None) -> AgentReply:
@@ -297,15 +299,21 @@ class _Usage:
         current = _usage_dict(response)
         for key, value in current.items():
             self.totals[key] += value
-        prices = PRICES.get(response.model)
-        if prices:
-            input_price, output_price, cache_read_price = prices
-            self.cost += (
-                current["input_tokens"] * input_price
-                + current["cache_creation_input_tokens"] * input_price * 1.25
-                + current["cache_read_input_tokens"] * cache_read_price
-                + current["output_tokens"] * output_price
-            ) / 1_000_000
+        self.cost += usage_cost(response.model, current)
+
+
+def usage_cost(model: str, usage: dict) -> float:
+    """USD for one call's usage; 0 for a model without a price entry."""
+    prices = PRICES.get(model)
+    if not prices:
+        return 0.0
+    input_price, output_price, cache_read_price = prices
+    return (
+        usage.get("input_tokens", 0) * input_price
+        + usage.get("cache_creation_input_tokens", 0) * input_price * 1.25
+        + usage.get("cache_read_input_tokens", 0) * cache_read_price
+        + usage.get("output_tokens", 0) * output_price
+    ) / 1_000_000
 
 
 def context_tokens(usage: dict | None) -> int:

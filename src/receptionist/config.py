@@ -32,4 +32,10 @@ class Settings(BaseSettings):
     max_tokens: int = 8000  # covers adaptive thinking plus the reply
     anthropic_timeout_s: float = 90.0
 
+    # Abuse limits per chat (ARCHITECTURE §8).
+    rate_limit_messages: int = 20
+    rate_limit_window_s: float = 600
+    max_message_chars: int = 2000
+    daily_budget_usd: float = 0.50
+
     database_url: str = "postgresql+asyncpg://receptionist:receptionist@localhost:5433/receptionist"

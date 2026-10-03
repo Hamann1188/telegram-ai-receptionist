@@ -104,6 +104,36 @@ class SqlChatRepository:
             row = (await db.execute(stmt)).one()
         return ChatRecord(*row)
 
+    async def find(self, tg_chat_id: int) -> ChatRecord | None:
+        async with self._sessions() as db:
+            row = (
+                await db.execute(
+                    select(Chat.id, Chat.tg_chat_id, Chat.language, Chat.mode).where(
+                        Chat.tg_chat_id == tg_chat_id
+                    )
+                )
+            ).one_or_none()
+        return ChatRecord(*row) if row else None
+
+    async def set_mode(self, chat_id: int, mode: str) -> None:
+        async with self._sessions.begin() as db:
+            await db.execute(update(Chat).where(Chat.id == chat_id).values(mode=mode))
+
+    async def usage_since(self, chat_id: int, since: datetime) -> list[dict]:
+        """`usage` of the chat's Claude replies stored after `since`."""
+        stmt = (
+            select(Message.usage)
+            .join(Session, Session.id == Message.session_id)
+            .where(
+                Session.chat_id == chat_id,
+                Message.role == "assistant",
+                Message.created_at >= since,
+                Message.usage.is_not(None),
+            )
+        )
+        async with self._sessions() as db:
+            return list(await db.scalars(stmt))
+
     async def forget(self, tg_chat_id: int) -> bool:
         """Delete everything stored about the chat (/forget). True if it existed."""
         async with self._sessions.begin() as db:
