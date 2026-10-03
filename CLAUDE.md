@@ -73,7 +73,10 @@ Each step is one commit; tick it off in Status.
   - `core/slots.py`;
   - models and migration `0001`, with an exclusion constraint against overlapping bookings (ADR-8);
   - 61 tests, 11 of them against PostgreSQL. Integration tests need `RECEPTIONIST_TEST_DATABASE_URL=postgresql+asyncpg://receptionist:receptionist@localhost:5433/receptionist_test`. They are slow (about 2 min) because every statement opens a new connection through the WSL port forward.
-- [ ] 3 Tools
+- [x] 3 Tools (2026-10-03):
+  - `core/ports.py` (repository and notifier interfaces), `core/tools.py` (7 strict tools and their handlers), `db/repositories.py`;
+  - 125 tests: unit tests with in-memory fakes in `tests/fakes.py`, plus PostgreSQL tests, including two concurrent bookings of one slot where exactly one wins;
+  - tool definitions depend only on `clinic.yaml`. Changing that file changes the tool list, so step 4 must rotate sessions whose stored tools fingerprint differs (append-only rule).
 - [ ] 4 Agent core
 - [ ] 5 Telegram adapter
 - [ ] 6 Handoff and admin group

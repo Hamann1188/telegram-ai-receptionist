@@ -38,6 +38,9 @@ class BookingRules(_Model):
     slot_step_minutes: PositiveInt
     min_notice_minutes: int
     horizon_days: PositiveInt
+    cancellation_notice_hours: PositiveInt = 24
+    late_cancellation_fee_uzs: int = 0
+    max_upcoming_per_chat: PositiveInt = 3  # abuse limit for bookings made through the bot
 
 
 class Resource(_Model):

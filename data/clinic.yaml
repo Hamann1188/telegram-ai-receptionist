@@ -27,6 +27,9 @@ booking:
   slot_step_minutes: 30
   min_notice_minutes: 60  # the earliest bookable start is one hour from now
   horizon_days: 30        # how far ahead patients can book
+  cancellation_notice_hours: 24
+  late_cancellation_fee_uzs: 50000
+  max_upcoming_per_chat: 3  # more than that through the bot goes to reception
 
 # Bookable lines. Each takes one appointment at a time; `days` limits the weekdays.
 resources:

@@ -63,16 +63,33 @@ Ports and adapters: `core/` has no aiogram or SQLAlchemy imports and depends on 
 
 ## 5. Tools
 
-All tools are declared from the first request with `strict: true`. `tool_choice` is `auto`: Opus 5.5 rejects forced choice, so the prompt says when each tool applies. A failing tool returns a `tool_result` with `is_error: true`, and the model explains the problem to the user.
+All tools are declared from the first request with `strict: true`. `tool_choice` is `auto`: Opus 5.5 rejects forced choice, so the prompt says when each tool applies. A failing tool returns a `tool_result` with `is_error: true` and a JSON `{"error": ...}` the model can act on; nothing raises to the agent loop. Unexpected exceptions are logged and become a generic error.
+
+Strict schemas (`core/tools.py`, checked by `tests/test_tools.py`):
+- every object sets `additionalProperties: false`;
+- every property is required, because optional parameters count toward a per-request limit of 24;
+- choices are enums, built from `clinic.yaml`;
+- there are no `minimum`, `maximum`, `minLength` or `maxLength`, which strict mode doesn't support, so ranges and lengths are checked in the handlers.
+
+Enum values are compared case-insensitively, because strict mode doesn't guarantee capitalisation. The definitions depend only on the clinic profile, so they are byte-identical across requests.
 
 | Tool | Input | Behaviour |
 |---|---|---|
-| `get_clinic_info` | `topic` (enum: hours, address, parking, payment, insurance, preparation, …) | Text from `clinic.yaml` |
-| `list_services` | — | Services with duration and price |
-| `find_free_slots` | `service_id`, `date_from` (ISO date), `days` (1–14) | Working hours minus existing bookings |
-| `create_booking` | `service_id`, `slot_start`, `patient_name`, `phone`, `confirmed` | Rejects unless `confirmed` is true and the slot is still free. Uses a transaction and a unique constraint. Notifies admins |
-| `cancel_booking` | `booking_id` | Only the chat's own bookings |
-| `handoff_to_human` | `reason`, `summary` | Switches the chat to operator mode and posts the summary to the admin group |
+| `get_clinic_info` | `topic` (enum of the FAQ topics in `clinic.yaml`) | The clinic's official answer |
+| `list_services` | — | Services with name (EN/RU/UZ), specialist, duration, price, and the specialist's weekdays when limited |
+| `find_free_slots` | `service_id`, `date_from` (date), `days` (1–14) | Free start times grouped by day, in clinic local time. A past `date_from` starts today. Beyond the 30-day horizon the result explains why it's empty. At most 60 times are returned |
+| `create_booking` | `service_id`, `date`, `time` (`HH:MM`, clinic local time), `patient_name`, `phone`, `confirmed` | Details in the booking gate below |
+| `list_my_bookings` | — | The chat's upcoming bookings with ids, so a patient can cancel in a later session |
+| `cancel_booking` | `booking_id` | Only the chat's own upcoming bookings. Less than 24 hours ahead, the result carries the 50,000 UZS late-cancellation fee. Notifies admins |
+| `handoff_to_human` | `reason` (enum: patient_request, complaint, medical_question, emergency, not_understood, other), `summary` | Switches the chat to operator mode in one transaction with the handoff record and notifies admins. The result's `handoff` flag tells the agent loop to stop |
+
+**`create_booking` gate**, checked in this order:
+1. **Input checks.** The name is 2–100 characters with a letter. The phone is normalized to E.164; 9 digits mean +998.
+2. **Per-chat limit.** At most 3 upcoming bookings per chat.
+3. **Free slot.** The time must be one of the free slots. If it isn't, the result lists the nearest free times that day.
+4. **Confirmation.** With `confirmed: false` nothing is ever booked. The model gets "the time is free, read the details back and confirm", so the call doubles as an availability check.
+5. **Booking.** The insert relies on the exclusion constraint (ADR-8). If another request wins the race, the result says so and offers fresh alternatives.
+6. **Notification.** Admin notifications are best effort: a failure is logged and the booking stands.
 
 ## 6. Human handoff
 
@@ -167,6 +184,7 @@ Targets: all booking assertions pass, reply language matches in ≥ 95% of turns
 | ADR-5 | Session rotation with a summary instead of trimming history | Trimming edits the prefix: 400 on Opus 5.5 for new accounts, and cache misses |
 | ADR-6 | PostgreSQL instead of SQLite | Concurrent writes; transactional booking with a unique constraint; same database as project 1 |
 | ADR-8 | Bookings belong to a resource, and overlaps are prevented by a PostgreSQL exclusion constraint (`btree_gist`), instead of `UNIQUE (slot_start)` | A unique start time doesn't stop a 60-minute visit at 10:00 from overlapping one at 10:30, and it would let only one patient in at a time for the whole clinic. The constraint makes double booking impossible even under concurrent requests. Trade-off: a PostgreSQL extension (contrib, trusted, present in the official image) |
+| ADR-9 | `create_booking` takes a local `date` and `HH:MM` `time` instead of a `slot_start` timestamp; `list_my_bookings` added | The model copies a date and a time from `find_free_slots` verbatim, so no UTC offsets can go wrong. A new session can still find a booking id to cancel. Trade-off: one more tool in the fixed tool list |
 | ADR-7 | No server-side refusal fallback in v1 | It is a beta API. In a persisted multi-turn history it adds `fallback` blocks and sticky routing, and the fallback model cannot read Opus 5.5 thinking. Refusals are rare for a clinic FAQ bot and end in a handoff offer. Revisit if evals show refusals |
 
 ## 12. Extensions (offer as add-ons)
