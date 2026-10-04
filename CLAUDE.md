@@ -97,3 +97,5 @@ Each step is one commit; tick it off in Status.
   - 14 of 14 pass, every metric at 100% or 0, $0.57 per run, median 7.2 s per message. I read every transcript;
   - added a Scope line to the system prompt (decline unrelated topics); the off-topic scenario passes with it.
 - [ ] 8 README and video
+  - [x] README (2026-10-04). The `docs/images/` PNGs were rendered in Edge: the conversations are real replies from the eval transcripts, the staff-group cards come from AdminDesk's own code, and the operator reply is an example (stated under the images).
+  - [ ] Demo video: the owner records it from `../demo-videos/telegram-ai-receptionist.md`, then a link goes under the README intro.
