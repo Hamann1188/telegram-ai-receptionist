@@ -5,6 +5,10 @@
 
 **A Telegram bot that works as a clinic's front desk.** It answers questions about the clinic, finds free times and books appointments after the patient confirms, cancels bookings, and hands the chat to a human when needed. It speaks Russian, Uzbek and English, and the clinic's staff work with it from an ordinary Telegram group.
 
+**▶ Watch the 90-second demo:**
+
+[![Demo video: booking in Russian, an emergency in Uzbek, a handoff to staff and back](https://img.youtube.com/vi/dduDLWVS3QY/maxresdefault.jpg)](https://youtu.be/dduDLWVS3QY)
+
 <img src="docs/images/booking-chat.png" alt="Booking an appointment in Russian" width="420">
 
 ## The problem

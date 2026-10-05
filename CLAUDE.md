@@ -96,6 +96,6 @@ Each step is one commit; tick it off in Status.
   - `evals/scenarios/*.yaml` (14 scenarios, 22 messages), `evals/scenario.py` (deterministic checks), `evals/run.py` (runner and judge);
   - 14 of 14 pass, every metric at 100% or 0, $0.57 per run, median 7.2 s per message. I read every transcript;
   - added a Scope line to the system prompt (decline unrelated topics); the off-topic scenario passes with it.
-- [ ] 8 README and video
+- [x] 8 README and video
   - [x] README (2026-10-04). The `docs/images/` PNGs were rendered in Edge: the conversations are real replies from the eval transcripts, the staff-group cards come from AdminDesk's own code, and the operator reply is an example (stated under the images).
-  - [ ] Demo video: the owner records it from `../demo-videos/telegram-ai-receptionist.md`, then a link goes under the README intro.
+  - [x] Demo video (2026-10-05). The owner recorded it from `../demo-videos/telegram-ai-receptionist.md` with the local AI voice-over. It is on YouTube, unlisted: https://youtu.be/dduDLWVS3QY, linked under the README intro as a clickable thumbnail. The staff cards in it show the owner's own Telegram account as the patient (display name and @username).
